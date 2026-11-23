@@ -51,9 +51,11 @@ validates every write. Ditto blocks Thing Model downloads from private addresses
 | `scripts/smoke-test.sh` | 27 | end-to-end check |
 | `adapters/systemd/g1-adapter.service` | 15 | user unit for the adapter on the G1 jump host (config, not code) |
 | `adapters/g1_dds_mqtt.py` | 161 | G1 29-DoF DDS (`rt/lowstate`, `bmsstate`) → MQTT; subscribe-only. Run on the G1 jump host: `PYTHONPATH=<dir with paho> python g1_dds_mqtt.py --iface enp6s0 --mqtt-host <DGX>`; needs `MQTT_EDGE_PASSWORD` |
+| `adapters/panda_franka_mqtt.py` | 208 | Franka Panda/FR3 libfranka `RobotState` (`read_once()` loop, ~1 kHz) → MQTT; read-only, never commands motion. `--backend pylibfranka` (FR3, system ≥ 5), `panda_py` (Panda, system 4.x), `fake` (offline test). `python panda_franka_mqtt.py --backend <b> --robot-ip <FCI ip> --mqtt-host <DGX>`; needs `MQTT_EDGE_PASSWORD`. Not yet run on the real robot |
 
 ## Known limits (P1)
 
 - Telegraf disk buffer is experimental upstream and not size-capped: watch the `telegraf-buffer` volume.
-- Panda gripper is not modelled; no real robot adapter yet (needs the Franka system version).
+- Panda gripper is not modelled; the Panda adapter is only tested with `--backend fake` (no robot access yet).
+- Telegraf drops most of the raw stream at G1 rates: mosquitto logs "Outgoing messages are being dropped for client telegraf-phm-raw" and Telegraf reconnects (`pingresp not received`) every ~1–2 min; ~20–30% of G1 samples reach InfluxDB. Ditto state is unaffected.
 - MQTT ACLs are configured but not covered by the smoke test (MQTT 3.1.1 silently drops denied publishes).
