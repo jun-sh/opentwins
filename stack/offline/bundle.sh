@@ -186,7 +186,7 @@ cmd_build() {
 
   { printf '{"name":"%s","version":"%s","arch":"%s","created":"%s","git_commit":"%s",\n' \
       "$name" "$ver" "$ARCH" "$(date -u +%FT%TZ)" "$(git -C "$REPO" rev-parse HEAD)"
-    printf ' "images":[%s]}\n' "$(awk '{printf "%s{\"ref\":\"%s\",\"id\":\"%s\",\"pinned\":\"%s\"}", NR>1?",":"", $1,$2,$3}' "$W/images/images.ids")"; } \
+    printf ' "images":[%s]}\n' "$(awk '{printf "%s{\"ref\":\"%s\",\"id\":\"%s\",\"pinned\":\"%s\"}", (NR>1 ? "," : ""), $1, $2, $3}' "$W/images/images.ids")"; } \
     > "$W/bundle.json"
   (cd "$W" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
   tar -C "$DIST" -cf "$DIST/$name.tar" "$name"

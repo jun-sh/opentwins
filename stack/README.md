@@ -63,6 +63,12 @@ validates every write. Ditto blocks Thing Model downloads from private addresses
 | `plant-sim/pump_set_opcua_sim.py` | 190 | P4: asyncua (FreeOpcUa) OPC UA server simulating a motor-pump set with injectable DE-bearing wear; stands in for a plant PLC/DCS. Not part of the twin path |
 | `plant-sim/telegraf-opcua.conf` | 206 | P4: OPC UA → edge contract with Telegraf `inputs.opcua` + `outputs.mqtt` (JSONata payloads); config, not code. This is the whole OPC UA "adapter" |
 | `plant-sim/docker-compose.yml`, `Dockerfile.*` | 40 | P4: separate compose project `phm-plant` on network `phm_default`; configs baked into images |
+| `offline/bundle.sh` | 201 | P5: `lock` pins images by registry digest + Python artifacts by sha256; `build` vendors wheels, builds custom images with `--network none`, `docker save`s, runs SBOM, writes versioned tarball + `SHA256SUMS` |
+| `offline/install.sh` | 103 | P5: air-gapped install from an extracted bundle (checksums, `docker load`, image-ID check, init-env, 3 projects up with offline overlays, health wait, provision, smoke test; `--rebuild` rebuilds custom images offline) |
+| `offline/sbom.sh` | 48 | P5: Syft CycloneDX SBOM per image (+ Python-only SBOM for custom images), Grype vulnerability JSON + summary |
+| `offline/licence_summary.py` | 135 | P5: licence classes from the SBOMs + curated `components.json`; flags AGPL/SSPL/NOSA/non-OSI/unknown |
+| `offline/test/offline-proof.sh`, `Dockerfile.harness` | 56 | P5 test only: installs a bundle in a throwaway Docker-in-Docker with `--network none` and checks health, smoke test, P4 data |
+| `offline/docker/*.Dockerfile`, `offline/compose/*.offline.yml` | 58 | P5 config: offline twins of `phm/Dockerfile` and `plant-sim/Dockerfile.sim` (wheels only, `--require-hashes`; keep in sync) and `pull_policy: never` overlays |
 
 ## P4 plant simulation (OPC UA pump set)
 
