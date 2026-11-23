@@ -1,0 +1,2 @@
+FROM docker.io/library/telegraf:1.40.3-alpine
+COPY telegraf-opcua.conf /etc/telegraf/telegraf.conf

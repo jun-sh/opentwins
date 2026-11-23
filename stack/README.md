@@ -52,6 +52,23 @@ validates every write. Ditto blocks Thing Model downloads from private addresses
 | `adapters/systemd/g1-adapter.service` | 15 | user unit for the adapter on the G1 jump host (config, not code) |
 | `adapters/g1_dds_mqtt.py` | 161 | G1 29-DoF DDS (`rt/lowstate`, `bmsstate`) → MQTT; subscribe-only. Run on the G1 jump host: `PYTHONPATH=<dir with paho> python g1_dds_mqtt.py --iface enp6s0 --mqtt-host <DGX>`; needs `MQTT_EDGE_PASSWORD` |
 | `adapters/panda_franka_mqtt.py` | 208 | Franka Panda/FR3 libfranka `RobotState` (`read_once()` loop, ~1 kHz) → MQTT; read-only, never commands motion. `--backend pylibfranka` (FR3, system ≥ 5), `panda_py` (Panda, system 4.x), `fake` (offline test). `python panda_franka_mqtt.py --backend <b> --robot-ip <FCI ip> --mqtt-host <DGX>`; needs `MQTT_EDGE_PASSWORD`. Not yet run on the real robot |
+| `plant-sim/pump_set_opcua_sim.py` | 190 | P4: asyncua (FreeOpcUa) OPC UA server simulating a motor-pump set with injectable DE-bearing wear; stands in for a plant PLC/DCS. Not part of the twin path |
+| `plant-sim/telegraf-opcua.conf` | 206 | P4: OPC UA → edge contract with Telegraf `inputs.opcua` + `outputs.mqtt` (JSONata payloads); config, not code. This is the whole OPC UA "adapter" |
+| `plant-sim/docker-compose.yml`, `Dockerfile.*` | 40 | P4: separate compose project `phm-plant` on network `phm_default`; configs baked into images |
+
+## P4 plant simulation (OPC UA pump set)
+
+```bash
+cd plant-sim && docker-compose -p phm-plant --env-file ../.env up -d --build   # own project; core stack untouched
+```
+
+- `pump-sim`: OPC UA server `opc.tcp://<host>:14840/plant-sim/` (bound to `PHM_BIND`), namespace `urn:opentwins:plant-sim`,
+  nodes `PumpSet01.{Motor,BearingDE,BearingNDE,Pump,Controller,Alarms,Sim}.*`, security None (lab only).
+- Degradation: `PumpSet01.Sim.BearingWear` (0–1, writable) grows at `Sim.BearingWearRate` (default 0.5 per hour,
+  env `SIM_BEARING_WEAR_RATE`; `SIM_TIME_SCALE` speeds up simulated time); at 1 the bearing is "replaced" (`Sim.AutoReplace`).
+  Write `BearingWear` from any OPC UA client to inject a fault; alarm bits go to `motor.faultCode`, names to `controller.faultCodes`.
+- `telegraf-opcua`: 10 Hz raw → `phm/raw/plant.sim:pump-set-01/<feature>`, 1 Hz state → `phm/state/...` (as user `edge`).
+- Twin: `things/plant.sim_pump-set-01.json` (asset TM `motor-pump-set`); Grafana dashboard *Pump Set (OPC UA, P4)*.
 
 ## Known limits (P1)
 

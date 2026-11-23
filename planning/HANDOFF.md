@@ -29,7 +29,7 @@
 | P1 单机打通 | 🟡 中心服务栈 ✅、Panda 孪生 + 模拟数据 ✅；**G1 29 自由度：TM、孪生、适配器、真机上行 ✅；Grafana 面板 ✅** |
 | P2 Type 复用 | 🟡 Panda 适配器 `stack/adapters/panda_franka_mqtt.py` 已写好，fake 后端端到端通过（核心代码改动 0 行），**真机未跑**（无访问方式）；PiperX ⬜ |
 | P3 PHM 链路 | ⬜ ProgPy/PyOD → 写回 `phm`；Event Frame；Atlas CMMS |
-| P4 核电演示 | ⬜ |
+| P4 核电演示 | 🟡 OPC UA 泵组模拟器 + Telegraf OPC UA→MQTT + 孪生 `plant.sim:pump-set-01` + Grafana 面板 ✅（DGX 上运行，核心代码改动 0 行）；见 §5 P4 |
 | P5 加固 | ⬜ 离线部署、SBOM、审计 |
 
 ## 4. 当前环境
@@ -51,6 +51,17 @@ G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab
 - 后端：`pylibfranka`（FR3，系统 ≥ 5，libfranka ≥ 0.16，PyPI 轮子 ≥ 0.20.2；无 `server_version()`，`RobotMode` 名无 k 前缀，`Duration` 只有 `to_sec`）、`panda_py`（Panda 系统 4.x，需对应 libfranka 0.9.x 构建）、`fake`（合成数据，离线测试）。绑定差异已在代码里兼容，依据为两个仓库的 pybind 源码，**未在真机验证**。
 - 离线验证（fake，DGX 本机，注入 0.2% 丢包）：适配器统计 1000 Hz、丢 0.20%；Ditto `panda-001` 7 个关节 + controller 实时更新；InfluxDB 7 个关节都有 `motorPosition` 等字段，当时只入库约 30%（Telegraf 丢数，已于 2026-11-23 修复，见 §6）。核心代码（TM、`provision.sh`、Telegraf/Ditto 配置）改动 0 行。
 - 真机步骤：① Desk（浏览器打开控制柜 IP）Settings→System 读系统版本，激活 FCI；② 4.x → `--backend panda_py`，≥ 5 → `--backend pylibfranka`（`pip install pylibfranka==<与系统匹配的版本>`）；版本不匹配时连接报错会给出 server version；③ `MQTT_EDGE_PASSWORD=... python panda_franka_mqtt.py --backend <b> --robot-ip <ip> --mqtt-host 10.10.60.128 --duration 60`，记录 `[stats]` 的采样率和丢包；④ 仿照 G1 做 systemd 单元。注意 FCI 同时只允许一个客户端。
+
+### P4 OPC UA 泵组状态（2026-11-23）
+- 组成：`stack/plant-sim/`，独立 compose 项目 `phm-plant`（接入外部网络 `phm_default`，不动核心服务）。启动：`cd stack/plant-sim && docker-compose -p phm-plant --env-file ../.env up -d --build`。配置打包进镜像，不依赖本检出目录。
+  - `pump-sim`：asyncua 1.1.8 的 OPC UA 服务器（`pump_set_opcua_sim.py`，190 行，已登记），宿主机 `127.0.0.1:14840`，命名空间 `urn:opentwins:plant-sim`，节点 `PumpSet01.*`；转速、定子电流、转矩、绕组温度、DE/NDE 轴承振动 RMS/峰值与温度、流量、进出口压力、6 个报警点（布尔）+ 报警字。
+  - 退化注入：`PumpSet01.Sim.BearingWear`（0–1，可写）按 `Sim.BearingWearRate`（默认 0.5/h）增长，驱动端振动、轴承温度、电流随之升高；到 1 自动"换轴承"归零（2 小时一个锯齿周期）。阈值按 ISO 10816-3：7.1 mm/s 报警、11.2 停机。写节点即可注入故障（已验证：写 0.8 → `motor.faultCode=1`、`controller.faultCodes=["VibrationHigh"]`；写回 0.05 → 报警清除）。
+  - `telegraf-opcua`：Telegraf 1.40.3 `inputs.opcua` → `outputs.mqtt`，**纯配置**（`telegraf-opcua.conf`）。10 Hz 原始数据每秒批量发到 `phm/raw/...`，1 Hz 状态以 Ditto merge 发到 `phm/state/...`；用 JSONata 生成负载，报警布尔量转成 `controller.faultCodes`。节点列表写了两遍（10 Hz 与 1 Hz 两路输入），因为 Telegraf 聚合器不能串联。
+- Type：新增 `component/bearing-1.0.0`、`component/centrifugal-pump-1.0.0`、`asset/motor-pump-set-1.0.0`；电机复用 `rotating-actuator`（`velocity`、`current`、`torque`、`windingTemperature`、`faultCode`），控制器复用 `controller`。孪生 `plant.sim:pump-set-01` 用现有 `provision.sh` 创建（复用 `policy-robot.json`）。
+- 验证：Ditto 5 个 Feature 每秒更新；InfluxDB 每个 Feature 约 10 样本/秒；Grafana 面板 *Pump Set (OPC UA, P4)*（uid `phm-pump-set`，14 个面板）全部查询经 API 返回数据。面板视觉效果未用浏览器检查。
+- **核心代码改动 0 行**：现有 TM、`provision.sh`、核心 compose、Telegraf/mosquitto/Ditto 配置均未修改；只新增文件，外加 `stack/README.md` 登记表和 P4 小节（文档）。
+- **部署注意**：运行中的 nginx/Grafana 挂载的是主检出目录 `opentwins/stack/`（分支 `feat/phm-p1-stack`）。为让服务即时生效，已把 3 个新 TM 和 `pump-set.json` **复制**到主检出目录（未跟踪文件）。合并本分支后这些文件会变成已跟踪文件，内容相同；合并时若 git 报"untracked file would be overwritten"，先删除主检出目录中的这 4 个副本。
+- 遗留：未实现 OPC UA Alarms & Conditions 事件（报警是布尔变量，Telegraf 只轮询值）；OPC UA 安全策略为 None（核电部署需 Basic256Sha256 + 证书）；轴承几何、额定值等 configuration 属性未填写（TM 中为可选）；未与 Microsoft OPC PLC 等第三方服务器做互通测试。
 
 ### G1 运行状态
 - 跳板机用户服务 `g1-adapter`：`systemctl --user status|restart|stop g1-adapter`，日志 `journalctl --user -u g1-adapter`。单元文件在 `stack/adapters/systemd/`；`~/phm-adapter/env`（权限 600）存 MQTT 密码；已 `enable-linger`。kill -9 后 5 秒自动拉起已验证；**整机重启后自启未实测**。更新适配器：scp 到 `~/phm-adapter/` 后 restart。在 G1 上做别的底层调试前可先 stop（适配器只订阅，不下发）。
