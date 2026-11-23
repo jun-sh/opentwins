@@ -49,6 +49,7 @@ validates every write. Ditto blocks Thing Model downloads from private addresses
 | `scripts/init-env.sh` | 31 | generate secrets and credential files |
 | `scripts/provision.sh` | 40 | PUT declarative JSON to the Ditto API |
 | `scripts/smoke-test.sh` | 27 | end-to-end check |
+| `adapters/systemd/g1-adapter.service` | 15 | user unit for the adapter on the G1 jump host (config, not code) |
 | `adapters/g1_dds_mqtt.py` | 161 | G1 29-DoF DDS (`rt/lowstate`, `bmsstate`) → MQTT; subscribe-only. Run on the G1 jump host: `PYTHONPATH=<dir with paho> python g1_dds_mqtt.py --iface enp6s0 --mqtt-host <DGX>`; needs `MQTT_EDGE_PASSWORD` |
 
 ## Known limits (P1)

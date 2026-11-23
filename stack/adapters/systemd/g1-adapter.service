@@ -1,0 +1,14 @@
+[Unit]
+Description=Unitree G1 DDS to MQTT adapter (subscribe-only)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/phm-adapter
+EnvironmentFile=%h/phm-adapter/env
+Environment=PYTHONPATH=%h/phm-adapter/lib PYTHONDONTWRITEBYTECODE=1
+ExecStart=/home/server/workspace/gr00t_wbc/.venv/bin/python g1_dds_mqtt.py --iface enp6s0 --mqtt-host 10.10.60.128
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

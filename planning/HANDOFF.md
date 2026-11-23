@@ -46,7 +46,8 @@
 
 - BMS 单位已核实：`cell_vol`、`bmsvoltage` 为 mV，`current` 为 mA（机器人开机时为负），`temperature` 为 °C。
 - `ratedTorque` 暂用 `unitree_rl_gym/.../g1_29dof.urdf` 的 `effort`（峰值力矩上限，不是额定值）；`motor_info.md` 未找到，需要时再替换。
-- 未做：用 `unitree_mujoco` 仿真测试（真机已覆盖验证）；`mainboardstate` 映射到 `controller`（`temperature[0]`≈44 °C 是否为 CPU 温度待确认，因此未映射）；适配器常驻运行（目前只手动跑过 45 秒）。
+- **适配器已常驻**：跳板机用户服务 `g1-adapter`（`systemctl --user status|restart g1-adapter`，日志 `journalctl --user -u g1-adapter`），单元文件在 `stack/adapters/systemd/`，`~/phm-adapter/env`（权限 600）存 MQTT 密码；已 `enable-linger`，开机自启；kill -9 后 5 秒自动拉起已验证。更新适配器：scp 新文件后 restart。
+- 未做：用 `unitree_mujoco` 仿真测试（真机已覆盖验证）；`mainboardstate` 映射到 `controller`（`temperature[0]`≈44 °C 是否为 CPU 温度待确认，因此未映射）；
 - Grafana 面板 `G1 Thermal & Battery`（`stack/grafana/dashboards/g1-thermal-battery.json`）：SOC/SOH/循环/电压/电流/最热绕组，29 关节绕组与驱动温度，电池电压/单体极值/温度。查询已通过 Grafana API 验证（数据可用、无报错），视觉效果未人工看过。电池 raw 在适配器中拍平为标量字段（`cellVoltageMin/Max`、`temperature0..3`）写入 InfluxDB，因为 raw 通道只支持标量。
 - `provision.sh` 现在对已存在的 Thing 只更新 attributes（否则 PUT 会因 WoT 校验缺少骨架 Feature 而 400）。
 
