@@ -27,7 +27,7 @@
 |---|---|
 | P0 选型冻结 | ✅ |
 | P1 单机打通 | 🟡 中心服务栈 ✅、Panda 孪生 + 模拟数据 ✅；**G1 29 自由度：TM、孪生、适配器、真机上行 ✅；Grafana 面板 ✅** |
-| P2 Type 复用 | 🟡 Panda 适配器 `stack/adapters/panda_franka_mqtt.py` 已写好，fake 后端端到端通过（核心代码改动 0 行），**真机未跑**（无访问方式）；PiperX ⬜ |
+| P2 Type 复用 | 🟡 Panda 适配器 `stack/adapters/panda_franka_mqtt.py` 已写好，fake 后端端到端通过（核心代码改动 0 行），**真机未跑**（无访问方式）；PiperX 适配器 + TM + 孪生 `lab.robots:piperx-001` 已建，fake 后端端到端通过，**真机未跑** |
 | P3 PHM 链路 | ⬜ ProgPy/PyOD → 写回 `phm`；Event Frame；Atlas CMMS |
 | P4 核电演示 | 🟡 OPC UA 泵组模拟器 + Telegraf OPC UA→MQTT + 孪生 `plant.sim:pump-set-01` + Grafana 面板 ✅（DGX 上运行，核心代码改动 0 行）；见 §5 P4 |
 | P5 加固 | ⬜ 离线部署、SBOM、审计 |
@@ -51,6 +51,13 @@ G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab
 - 后端：`pylibfranka`（FR3，系统 ≥ 5，libfranka ≥ 0.16，PyPI 轮子 ≥ 0.20.2；无 `server_version()`，`RobotMode` 名无 k 前缀，`Duration` 只有 `to_sec`）、`panda_py`（Panda 系统 4.x，需对应 libfranka 0.9.x 构建）、`fake`（合成数据，离线测试）。绑定差异已在代码里兼容，依据为两个仓库的 pybind 源码，**未在真机验证**。
 - 离线验证（fake，DGX 本机，注入 0.2% 丢包）：适配器统计 1000 Hz、丢 0.20%；Ditto `panda-001` 7 个关节 + controller 实时更新；InfluxDB 7 个关节都有 `motorPosition` 等字段，当时只入库约 30%（Telegraf 丢数，已于 2026-11-23 修复，见 §6）。核心代码（TM、`provision.sh`、Telegraf/Ditto 配置）改动 0 行。
 - 真机步骤：① Desk（浏览器打开控制柜 IP）Settings→System 读系统版本，激活 FCI；② 4.x → `--backend panda_py`，≥ 5 → `--backend pylibfranka`（`pip install pylibfranka==<与系统匹配的版本>`）；版本不匹配时连接报错会给出 server version；③ `MQTT_EDGE_PASSWORD=... python panda_franka_mqtt.py --backend <b> --robot-ip <ip> --mqtt-host 10.10.60.128 --duration 60`，记录 `[stats]` 的采样率和丢包；④ 仿照 G1 做 systemd 单元。注意 FCI 同时只允许一个客户端。
+
+### P2 PiperX 适配器状态（2026-11-23）
+- 新增 TM `asset/arm-agilex-piperx-1.0.0`（6 个 `rotating-actuator` 关节 `joint1..6` + `controller`，关节名取自 Menagerie `agilex_piper`，那是标准 PiPER，PiPER X 运动学待确认；夹爪暂不建模）、孪生 `lab.robots:piperx-001`（现有 `provision.sh` 创建）。核心代码改动 0 行。
+- `stack/adapters/piperx_can_mqtt.py`（204 行，已登记）：以 `--poll-hz`（默认 200）轮询 piper_sdk 的反馈缓存，高速帧 `time_stamp` 变化才记一条样本。映射：`joint_state.joint_i`（0.001°）→`position`；高速 `motor_speed`（0.001 rad/s）→`velocity`、`effort`（0.001 N·m）→`torque`、`current`（0.001 A）→`current`；低速 `vol`（0.1 V）→`busVoltage`、`motor_temp`→`windingTemperature`、`foc_temp`→`driverTemperature`、`foc_status` 8 个标志位→`faultCode`（位序见代码 `FOC_BITS`；位 6 `driver_enable_status` 在正常使能时为 1，即正常值 64）。`controller.status.mode` = `ctrl_mode/arm_status`，`faultCodes` = 非正常 `arm_status` + `err_status` 中为真的标志；固件版本写入 `controller.configuration.firmwareVersion`。
+- 字段名和单位来自 piper_sdk 的 INTERFACE_V2/V3 文档，**未对照代码和真机核对**；反馈频率文档未给出，运行时打印 SDK 的 `Hz` 字段。
+- 离线验证（fake，DGX）：200 Hz 新帧；Ditto 6 关节 + controller 实时更新；InfluxDB 25 s 内每关节 4930 条（≈ 200 Hz × 运行时长）。
+- 真机步骤：① 工控机上 `pip install piper_sdk`，配置 SocketCAN（`can0`，1 Mbit/s）；② `--dry-run --duration 10` 读固件版本（≥ 1.8-8 用 V3）并确认机型是 PiPER X；③ 正式运行 60 s，记录 `[stats]` 的帧率；④ 做 systemd 单元。需用户提供：PiperX 连在哪台机器、CAN 口名。
 
 ### P4 OPC UA 泵组状态（2026-11-23）
 - 组成：`stack/plant-sim/`，独立 compose 项目 `phm-plant`（接入外部网络 `phm_default`，不动核心服务）。启动：`cd stack/plant-sim && docker-compose -p phm-plant --env-file ../.env up -d --build`。配置打包进镜像，不依赖本检出目录。
