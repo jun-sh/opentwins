@@ -46,7 +46,7 @@ FIELDS = ["windingTemperature", "driverTemperature", "torque", "velocity", "torq
 LEVEL = {"normal": 0, "watch": 1, "alert": 2, "fault": 3}
 
 FLUX = """
-src = (fld, fn, as) => from(bucket: "{b}") |> range(start: -{h}s)
+src = (fld, fn, as) => from(bucket: "{b}") |> range(start: {start}, stop: {stop})
   |> filter(fn: (r) => r._measurement == "telemetry" and r.thing_id == "{t}" and r.feature_id =~ /_joint$/ and r._field == fld)
   |> aggregateWindow(every: 30s, fn: fn, createEmpty: false) |> set(key: "_field", value: as)
 """
@@ -75,10 +75,14 @@ def ts(s):
     return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
 
 
-def load_history():
+def iso(t):
+    return datetime.fromtimestamp(t, timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def load_history(now):
     cols = ", ".join(f'"{c}"' for c in FIELDS)
     per = {}
-    for row in flux(FLUX.format(b=BUCKET, h=HISTORY, t=THING, cols=cols)):
+    for row in flux(FLUX.format(b=BUCKET, start=iso(now - HISTORY), stop=iso(now + 1), t=THING, cols=cols)):
         f = row.get("feature_id")
         if not f or row.get("_time") in (None, "_time"):
             continue
@@ -172,15 +176,23 @@ class Worker:
             lines.append(f'{base} phase="end",condition="{old}",reason="recovered",durationS={dur:.0f} {int(now)}')
         print(f"[frame] {f}: {old} -> {new} ({reason})")
 
-    def cycle(self):
-        now = time.time()
+    def cycle(self, now=None, dry_run=False):
+        """One assessment as of `now` (default: wall clock). dry_run prints instead of writing."""
+        started, now = time.time(), now or time.time()
         feats = ditto("GET", "/features").json()
-        hist = load_history()
-        patch, lines = {}, []
-        stamp = datetime.fromtimestamp(now, timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-        for f, (t, x) in sorted(hist.items()):
-            if f not in feats or now - t[-1] > STALE:
-                continue  # unknown feature or no fresh data: leave the last assessment in place
+        hist = load_history(now)
+        patch, lines, stale = {}, [], []
+        stamp = iso(now)
+        for f in sorted(k for k in feats if k.endswith("_joint")):
+            t, x = hist.get(f, (np.array([]), None))
+            if not len(t) or now - t[-1] > STALE:
+                # No fresh data: the TM condition enum has no "unknown", so keep the last assessment
+                # (lastAssessedAt shows its age), mark RUL "not estimated" (-1) and flag it in InfluxDB.
+                stale.append(f)
+                if feats[f].get("properties", {}).get("phm", {}).get("rulHours", -1) != -1:
+                    patch[f] = {"properties": {"phm": {"rulHours": -1}}}
+                lines.append(f'phm,thing_id={tag(THING)},feature_id={tag(f)} conditionLevel=-1i,condition="stale" {int(now)}')
+                continue
             tmax = feats[f].get("properties", {}).get("configuration", {}).get("maxTemperature", DEFAULT_TMAX)
             fault = bool(np.nanmax(x[t >= now - ASSESS, 6], initial=0) > 0)
             t_now, rul, margin = self.thermal(f, t, x, tmax)
@@ -194,17 +206,29 @@ class Worker:
                          f"anomalyScore={phm['anomalyScore']},rulHours={phm['rulHours']},"
                          f"conditionLevel={LEVEL[cond]}i,condition=\"{cond}\",temperature={t_now} {int(now)}")
             old = self.cond.get(f, "normal")
-            if cond != old:
+            if cond != old and dry_run:
+                print(f"  [frame] {f}: {old} -> {cond} ({reason})")
+            elif cond != old:
                 self.event_frame(f, old, cond, reason, now, lines)
             self.cond[f] = cond
+        if dry_run:
+            for f, p in patch.items():
+                print(f"  {f:28s} {json.dumps(p['properties']['phm'])}")
+            print(f"[dry-run] {iso(now)}: assessed {sum(f not in stale for f in patch)}, stale {len(stale)}")
+            return
         if patch:
             ditto("PATCH", "/features", data=json.dumps(patch), headers={"Content-Type": "application/merge-patch+json"})
         influx_write(lines)
-        print(f"[cycle] assessed {len(patch)} features in {time.time() - now:.1f}s; "
-              f"open frames {len(self.frames)}", flush=True)
+        print(f"[cycle] {iso(now)} assessed {sum(f not in stale for f in patch)}, stale {len(stale)}, "
+              f"{time.time() - started:.1f}s; open frames {len(self.frames)}", flush=True)
 
 
 def main():
+    if len(sys.argv) > 1:  # replay: phm_worker.py <ISO time> [...]  -> dry-run assessments as of past times
+        w = Worker()
+        for a in sys.argv[1:]:
+            w.cycle(now=ts(a), dry_run=True)
+        return
     w = None
     while True:
         start = time.time()

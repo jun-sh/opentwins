@@ -20,6 +20,7 @@ InfluxDB raw/telemetry ──(Flux, 30 s 聚合, 6 h 窗口)──▶ phm-worker
 - 部署：`cd stack/phm && docker-compose -p phm-analytics --env-file ../.env up -d --build`。**必须带 `-p`**：`../.env` 里的 `COMPOSE_PROJECT_NAME=phm` 会覆盖 compose 文件的 `name:`，否则会和主服务栈混成一个项目。
 - 日志：`docker logs -f phm-analytics-phm-worker-1`（`[fit]` 拟合参数，`[cycle]` 每轮耗时，`[frame]` 状态迁移）。
 - 参数都是环境变量（见 `phm_worker.py` 顶部）：周期、窗口、阈值、`PHM_DEFAULT_MAX_TEMP`。
+- **历史回放（只读，不写 Ditto/InfluxDB）**：`docker run --rm --network phm_default -e DITTO_USER -e DITTO_USER_PASSWORD -e INFLUX_TOKEN phm-worker:0.1 2026-11-23T09:00:00Z 2026-11-23T10:30:00Z`，按给定时刻依次评估并打印结果和状态迁移。已用 09:00/10:30/11:40 UTC 验证数值随时间变化，用 11:00 UTC（断线期间）验证 29 个关节都判为 stale。
 
 ## 设计选择
 
@@ -35,7 +36,7 @@ InfluxDB raw/telemetry ──(Flux, 30 s 聚合, 6 h 窗口)──▶ phm-worker
 - 机器人多数时间静止，热模型拟合经常落在边界（tau=60 s、k=50），RUL 基本是上限 24 h；要有带载数据才有意义。
 - ECOD 训练集是最近 6 h 的同一关节数据，没有"健康基线"概念；机器人工况一变 anomalyScore 就会升高。
 - Telegraf 只入库 20–30% 原始样本（见 HANDOFF §6），对 30 s 聚合影响不大。
-- 数据超过 10 min 没有更新（`PHM_STALE_S`）的关节不评估，Ditto 里保留上一次结果（看 `lastAssessedAt`）。
+- **无新数据（离线）**：关节超过 10 min（`PHM_STALE_S`）没有数据时不评估，不崩溃也不写假值：Ditto 保留上一次的 `healthIndex/anomalyScore/condition`（`lastAssessedAt` 显示其时间），`rulHours` 改为 -1（TM 定义的"未估计"），InfluxDB `phm` 写 `condition="stale"`、`conditionLevel=-1`。TM 的 `condition` 枚举没有 `unknown`/`stale`，要在 Ditto 里显式表示需给 `monitored-component` TM 升版本加枚举值（核心改动，待决定）。
 
 ## Atlas CMMS 评估（未部署）
 

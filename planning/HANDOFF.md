@@ -75,7 +75,7 @@ G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab
 - 运行：`cd stack/phm && docker-compose -p phm-analytics --env-file ../.env up -d --build`（`-p` 必须带）。`restart: unless-stopped` + `init: true`；进程被 kill -9 后自动拉起已验证；未结束的 Event Frame 重启后从 InfluxDB 恢复（已用临时 thing_id 验证后删除）。
 - Grafana 面板 `G1 PHM Health`（uid `phm-g1-health`）已通过 API 导入运行中的 Grafana；文件在 `stack/grafana/dashboards/g1-phm-health.json`，分支合并后由文件 provisioning 接管。
 - 待人工：① 宇树 G1 关节过温限值 → 写入各关节 `configuration.maxTemperature`；② 是否部署 Atlas CMMS（AGPL）；③ 阈值（watch/alert）需要带载数据后再调。
-- 注意：10:36–11:20 UTC 期间 G1 关节数据中断（电池数据正常），原因不明（未登录跳板机查看）；worker 对 10 min 无数据的关节不评估。
+- G1 曾离线：`rt/lowstate` 10:36–11:20 UTC（18:36–19:20 CST）为 0 Hz（电池数据正常）；11:45 UTC 复查时已恢复（10 min 约 45 万样本/关节，Telegraf 修复后）。worker 对 10 min 无数据的关节不评估（`rulHours=-1`，InfluxDB 标 `stale`），历史回放模式见 `p3-phm.md`。**若机器人再次离线，实时链路需在其恢复后复查**；最后一次实时复查：2026-11-23 11:43 UTC，29 个关节均有新评估。
 
 ### G1 运行状态
 - 跳板机用户服务 `g1-adapter`：`systemctl --user status|restart|stop g1-adapter`，日志 `journalctl --user -u g1-adapter`。单元文件在 `stack/adapters/systemd/`；`~/phm-adapter/env`（权限 600）存 MQTT 密码；已 `enable-linger`。kill -9 后 5 秒自动拉起已验证；**整机重启后自启未实测**。更新适配器：scp 到 `~/phm-adapter/` 后 restart。在 G1 上做别的底层调试前可先 stop（适配器只订阅，不下发）。
