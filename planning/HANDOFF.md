@@ -34,7 +34,7 @@
 
 ## 4. 当前环境
 
-- 分支 `feat/phm-p1-stack`（未推送，没有 PR）。**`origin` 现在指向上游 `ertis-research/opentwins`，推送前先确认目标远程**。服务栈运行在本机 DGX 上（12 个容器，项目名 `phm`）。
+- 分支 `feat/phm-p1-stack` 已推送到 fork（远程 `fork` = jun-sh/opentwins），没有 PR。`origin` 是上游 ertis-research/opentwins，不要推送到那里。服务栈运行在本机 DGX 上（12 个容器，项目名 `phm`）。
 - 登录：Grafana http://127.0.0.1:13000，Ditto UI http://127.0.0.1:18080/ui/。两者都用 `admin`，密码在 `stack/.env`（git 忽略）。
 - MQTT 供边缘接入：`<DGX>:11883`，用户 `edge`。主题约定见 `stack/README.md`。
 - **G1 跳板机**：`ssh server@10.10.61.210`（本机已配好 SSH 密钥，不用密码）。网卡 `enp6s0`（192.168.123.99）直连 G1 内网，G1 的 PC2 是 192.168.123.164。可用的 SDK 解释器：`/home/server/workspace/gr00t_wbc/.venv/bin/python`（含 `unitree_sdk2py`）。**gr00t_wbc 属于他人正在进行的工作，禁止修改其中任何文件**：脚本放在 `/tmp` 或自己的目录，运行时设置 `PYTHONDONTWRITEBYTECODE=1`。
