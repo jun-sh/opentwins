@@ -21,7 +21,7 @@ docker-compose up -d
 ./scripts/smoke-test.sh      # publishes fake Panda data, checks Ditto + InfluxDB
 ```
 
-Credentials are in `.env` (git-ignored): Ditto user `ditto` / `DITTO_USER_PASSWORD`, Grafana `admin` / `GRAFANA_ADMIN_PASSWORD`.
+Credentials are in `.env` (git-ignored): Ditto `DITTO_USER` (default `admin`) / `DITTO_USER_PASSWORD`, Grafana `admin` / `GRAFANA_ADMIN_PASSWORD`.
 
 ## Edge contract (what an adapter must publish)
 

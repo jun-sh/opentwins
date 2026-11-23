@@ -1,7 +1,7 @@
 {
   "entries": {
     "OWNER": {
-      "subjects": { "nginx:ditto": { "type": "nginx basic auth user" } },
+      "subjects": { "nginx:${DITTO_USER}": { "type": "nginx basic auth user" } },
       "resources": {
         "thing:/":   { "grant": ["READ", "WRITE"], "revoke": [] },
         "policy:/":  { "grant": ["READ", "WRITE"], "revoke": [] },

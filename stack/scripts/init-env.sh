@@ -16,7 +16,7 @@ chmod 600 .env
 set -a; . ./.env; set +a
 
 mkdir -p secrets/mosquitto
-printf 'ditto:%s\n' "$(openssl passwd -apr1 "$DITTO_USER_PASSWORD")" > secrets/nginx.htpasswd
+printf '%s:%s\n' "$DITTO_USER" "$(openssl passwd -apr1 "$DITTO_USER_PASSWORD")" > secrets/nginx.htpasswd
 
 # mosquitto_passwd runs inside the broker image so the file gets the owner/mode mosquitto expects.
 docker run --rm -v "$PWD/secrets/mosquitto:/out" \

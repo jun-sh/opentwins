@@ -53,7 +53,7 @@ L0 基类           monitored-component（PHM 通用属性）
 | `component/controller-1.0.0` | L1 | `cpuTemperature`、`cpuLoad`、`commLatencyMs`、`faultCodes`、`firmwareVersion` | 三台机器人 |
 | `component/bearing-1.0.0` | L1 | `vibrationRms`、`vibrationPeak`、`temperature`；configuration：bearing geometry | 核电泵（P4） |
 | `component/centrifugal-pump-1.0.0` | L1 | `flow`、`suctionPressure`、`dischargePressure` | 核电泵（P4），**P4 唯一新增的部件 TM** |
-| `asset/humanoid-unitree-g1-1.0.0` | L2 | 29 个关节 + battery + controller | G1 |
+| `asset/humanoid-unitree-g1-23dof-1.0.0` | L2 | 23 个关节 + battery + controller | G1 23 自由度 EDU（P1 首台） |
 | `asset/arm-franka-panda-1.0.0` | L2 | 7 个关节 + controller (+ gripper) | Panda |
 | `asset/arm-agilex-piperx-1.0.0` | L2 | 6 个关节 + gripper + controller | PiperX |
 | `asset/motor-pump-set-1.0.0` | L2 | motor + 2 × bearing + pump | 核电虚拟资产 |
@@ -158,6 +158,7 @@ L0 基类           monitored-component（PHM 通用属性）
 
 ## 10. 已决定（2026-11-22）
 
-1. 关节名（Feature ID）统一采用 MuJoCo Menagerie MJCF 中的关节名；厂商 SDK 的索引到名称的映射放在适配器配置里。
+1. 关节名（Feature ID）统一采用 MuJoCo MJCF 中的关节名；厂商 SDK 的索引到名称的映射放在适配器配置里。
+   - 补充（2026-11-23）：Menagerie 只有 G1 29 自由度模型。**G1 23 自由度 EDU** 改用 Unitree 官方 `unitree_mujoco/unitree_robots/g1/g1_23dof.xml`（BSD-3）。其 DDS 电机索引 0–22 依次对应 MJCF 的前 23 个关节：左右腿各 6、`waist_yaw_joint`、左右臂各 5（shoulder pitch/roll/yaw、elbow、wrist_roll）。索引表见同目录的 `g1_joint_index_dds.md`；额定力矩按电机型号取自 `unitree_ros/robots/g1_description/motor_info.md`。
 2. PHM 结果在每次评估后写回 Ditto 的 Feature `phm` 分组，评估周期为分钟级。
 3. P4 的核电虚拟资产选"泵—电机—轴承"组合（`asset/motor-pump-set`）。

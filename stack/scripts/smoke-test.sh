@@ -17,7 +17,7 @@ dc exec -T mosquitto mosquitto_pub -h localhost -u edge -P "$MQTT_EDGE_PASSWORD"
 sleep 4
 
 fail=0
-pos=$(curl -fs -u "ditto:$DITTO_USER_PASSWORD" "$BASE/api/2/things/$THING/features/joint1/properties/status/position" || true)
+pos=$(curl -fs -u "$DITTO_USER:$DITTO_USER_PASSWORD" "$BASE/api/2/things/$THING/features/joint1/properties/status/position" || true)
 [ "$pos" = "0.42" ] && echo "PASS ditto  joint1.status.position=$pos" || { echo "FAIL ditto  got '$pos'"; fail=1; }
 
 cnt=$(dc exec -T influxdb influx query --org phm --token "$INFLUX_TOKEN" --raw \

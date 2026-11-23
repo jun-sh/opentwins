@@ -30,6 +30,6 @@ done
 echo "things:"
 for f in things/*_*.json; do
   name=$(basename "$f" .json); id="${name/_/:}"
-  put "$BASE/api/2/policies/$id" "ditto:$DITTO_USER_PASSWORD" things/policy-robot.json
-  put "$BASE/api/2/things/$id"   "ditto:$DITTO_USER_PASSWORD" "$f"
+  envsubst '${DITTO_USER}' < things/policy-robot.json | put "$BASE/api/2/policies/$id" "$DITTO_USER:$DITTO_USER_PASSWORD" -
+  put "$BASE/api/2/things/$id"   "$DITTO_USER:$DITTO_USER_PASSWORD" "$f"
 done
