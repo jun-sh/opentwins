@@ -58,7 +58,8 @@
 
 ## 6. 阻塞与未验证
 
-- 待真机读取：G1 主控固件版本（DDS 读不到，需在宇树 App 查看；BMS 固件为 1.3）、Franka 系统版本（Panda 还是 FR3）、PiperX 固件版本（≥ 1.8-8 需用 `C_PiperInterface_V3`）。
+- G1 主控固件版本：**暂时无法获取，不阻塞开发**。实验室没有宇树 App；`LowState.version` 为 `[0,0]`；loco/audio 服务的 `GetServerApiVersion` 返回错误 3102/3104（高层服务未响应，可能因机器人处于底层调试模式）。已知的版本线索：`mode_machine=5`、BMS 固件 1.3。孪生中 `controller.configuration.firmwareVersion` 暂不填写（它在 TM 中是可选项）。`rt/lf/mainboardstate` 可读（主板温度、电压），可映射到 `controller`。
+- 待真机读取：Franka 系统版本（Panda 还是 FR3）、PiperX 固件版本（≥ 1.8-8 需用 `C_PiperInterface_V3`）。
 - 未验证：MQTT ACL（smoke test 没覆盖）、Grafana 曲线的视觉效果、Telegraf 磁盘缓冲的容量上限。
 - 许可证：Grafana 和 Atlas CMMS 为 AGPL，ProgPy 为 NOSA，交付核电前需要法务意见。
 
