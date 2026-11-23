@@ -1,6 +1,6 @@
-# 交接文档（更新于 2026-11-23，P2 Panda 适配器）
+# 交接文档（更新于 2026-11-23，P3 PHM 链路）
 
-新对话从这里开始：先读本文件，按需再读 `p0-verification.md`、`type-design.md`、`../stack/README.md`。
+新对话从这里开始：先读本文件，按需再读 `p0-verification.md`、`type-design.md`、`p3-phm.md`、`../stack/README.md`。
 
 ## 1. 目标（一句话）
 
@@ -28,7 +28,7 @@
 | P0 选型冻结 | ✅ |
 | P1 单机打通 | 🟡 中心服务栈 ✅、Panda 孪生 + 模拟数据 ✅；**G1 29 自由度：TM、孪生、适配器、真机上行 ✅；Grafana 面板 ✅** |
 | P2 Type 复用 | 🟡 Panda 适配器 `stack/adapters/panda_franka_mqtt.py` 已写好，fake 后端端到端通过（核心代码改动 0 行），**真机未跑**（无访问方式）；PiperX 适配器 + TM + 孪生 `lab.robots:piperx-001` 已建，fake 后端端到端通过，**真机未跑** |
-| P3 PHM 链路 | ⬜ ProgPy/PyOD → 写回 `phm`；Event Frame；Atlas CMMS |
+| P3 PHM 链路 | 🟡 G1：PHM worker（ProgPy 热模型 + PyOD ECOD）每 120 s 写回 29 个关节的 `phm` ✅；Event Frame（InfluxDB `event_frame` + Ditto `conditionChanged`）✅；Grafana `G1 PHM Health` ✅；Atlas CMMS 只评估未部署（见 `p3-phm.md`）；`maxTemperature` 用占位 80 °C |
 | P4 核电演示 | 🟡 OPC UA 泵组模拟器 + Telegraf OPC UA→MQTT + 孪生 `plant.sim:pump-set-01` + Grafana 面板 ✅（DGX 上运行，核心代码改动 0 行）；见 §5 P4 |
 | P5 加固 | ⬜ 离线部署、SBOM、审计 |
 
@@ -44,7 +44,7 @@
 
 G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab.robots:g1-001`（31 个 Feature）、适配器 `stack/adapters/g1_dds_mqtt.py`（159 行，已登记）、Grafana 面板 `G1 Thermal & Battery`、跳板机 systemd 常驻服务。
 
-**优先级建议**：① 把分支推送并开 PR；② P2：Panda 真机适配器（验证"核心代码 0 行改动"）；③ P3：用 G1 温度做 ProgPy 热模型、写回 `phm`。
+**优先级建议**：① 合并 P3 分支；② G1 恢复在线后复查 P3 实时链路；③ 确认 G1 `maxTemperature`；④ P2：Panda 真机适配器。
 
 ### P2 Panda 适配器状态（2026-11-23）
 - `stack/adapters/panda_franka_mqtt.py`（208 行，已登记）：`Robot.read_once()` 循环读 `RobotState`，映射 `q→position`、`dq→velocity`、`tau_J→torque`、`theta→motorPosition`、`tau_ext_hat_filtered→externalTorque`；`faultCode` 位 0 = `joint_collision[i]`、位 1 = `joint_contact[i]`、位 2 = 任一 `current_errors`；`controller.status` 写 `mode`（`kIdle` 等）和 `faultCodes`（激活的错误名）。丢包按 `RobotState.time` 的毫秒跳变统计（每 10 s 打印）。
@@ -69,6 +69,13 @@ G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab
 - **核心代码改动 0 行**：现有 TM、`provision.sh`、核心 compose、Telegraf/mosquitto/Ditto 配置均未修改；只新增文件，外加 `stack/README.md` 登记表和 P4 小节（文档）。
 - **部署注意**：运行中的 nginx/Grafana 挂载的是主检出目录 `opentwins/stack/`（分支 `feat/phm-p1-stack`）。为让服务即时生效，已把 3 个新 TM 和 `pump-set.json` **复制**到主检出目录（未跟踪文件）。合并本分支后这些文件会变成已跟踪文件，内容相同；合并时若 git 报"untracked file would be overwritten"，先删除主检出目录中的这 4 个副本。
 - 遗留：未实现 OPC UA Alarms & Conditions 事件（报警是布尔变量，Telegraf 只轮询值）；OPC UA 安全策略为 None（核电部署需 Basic256Sha256 + 证书）；轴承几何、额定值等 configuration 属性未填写（TM 中为可选）；未与 Microsoft OPC PLC 等第三方服务器做互通测试。
+
+### P3 PHM 状态（2026-11-23，分支 `claude/phm-p3-pipeline-4cb468`）
+- 设计、参数、局限、Atlas 评估：`planning/p3-phm.md`。核心代码（TM、Ditto/Telegraf/mosquitto 配置、主 compose）改动 0 行；worker 是独立 compose 项目 `phm-analytics`（`stack/phm/`），只加入 `phm_default` 网络。
+- 运行：`cd stack/phm && docker-compose -p phm-analytics --env-file ../.env up -d --build`（`-p` 必须带）。`restart: unless-stopped` + `init: true`；进程被 kill -9 后自动拉起已验证；未结束的 Event Frame 重启后从 InfluxDB 恢复（已用临时 thing_id 验证后删除）。
+- Grafana 面板 `G1 PHM Health`（uid `phm-g1-health`）已通过 API 导入运行中的 Grafana；文件在 `stack/grafana/dashboards/g1-phm-health.json`，分支合并后由文件 provisioning 接管。
+- 待人工：① 宇树 G1 关节过温限值 → 写入各关节 `configuration.maxTemperature`；② 是否部署 Atlas CMMS（AGPL）；③ 阈值（watch/alert）需要带载数据后再调。
+- G1 曾离线：`rt/lowstate` 10:36–11:20 UTC（18:36–19:20 CST）为 0 Hz（电池数据正常）；11:45 UTC 复查时已恢复（10 min 约 45 万样本/关节，Telegraf 修复后）。worker 对 10 min 无数据的关节不评估（`rulHours=-1`，InfluxDB 标 `stale`），历史回放模式见 `p3-phm.md`。**若机器人再次离线，实时链路需在其恢复后复查**；最后一次实时复查：2026-11-23 11:43 UTC，29 个关节均有新评估。
 
 ### G1 运行状态
 - 跳板机用户服务 `g1-adapter`：`systemctl --user status|restart|stop g1-adapter`，日志 `journalctl --user -u g1-adapter`。单元文件在 `stack/adapters/systemd/`；`~/phm-adapter/env`（权限 600）存 MQTT 密码；已 `enable-linger`。kill -9 后 5 秒自动拉起已验证；**整机重启后自启未实测**。更新适配器：scp 到 `~/phm-adapter/` 后 restart。在 G1 上做别的底层调试前可先 stop（适配器只订阅，不下发）。
