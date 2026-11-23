@@ -1,0 +1,65 @@
+{
+  "@context": [
+    "https://www.w3.org/2022/wot/td/v1.1",
+    { "ditto": "https://ditto.eclipseprojects.io/wot/ditto-extension#" }
+  ],
+  "@type": "tm:ThingModel",
+  "title": "Monitored Component",
+  "description": "Base model for every monitored component. Carries the ISO 13374 (OSA-CBM) health outputs written back by the PHM layer.",
+  "version": { "model": "1.0.0" },
+  "tm:optional": [
+    "/properties/lastAssessedAt",
+    "/properties/modelRef",
+    "/events/conditionChanged"
+  ],
+  "properties": {
+    "healthIndex": {
+      "title": "Health index",
+      "description": "HA block output: 1 = as new, 0 = failed.",
+      "type": "number", "minimum": 0, "maximum": 1, "default": 1,
+      "ditto:category": "phm"
+    },
+    "anomalyScore": {
+      "title": "Anomaly score",
+      "description": "SD block output: 0 = nominal; larger = more anomalous.",
+      "type": "number", "minimum": 0, "default": 0,
+      "ditto:category": "phm"
+    },
+    "rulHours": {
+      "title": "Remaining useful life",
+      "description": "PA block output; -1 = not estimated.",
+      "type": "number", "minimum": -1, "unit": "h", "default": -1,
+      "ditto:category": "phm"
+    },
+    "condition": {
+      "title": "Condition",
+      "description": "AG block output.",
+      "type": "string", "enum": ["normal", "watch", "alert", "fault"], "default": "normal",
+      "ditto:category": "phm"
+    },
+    "lastAssessedAt": {
+      "title": "Last assessment time",
+      "type": "string", "format": "date-time",
+      "ditto:category": "phm"
+    },
+    "modelRef": {
+      "title": "Assessment model reference",
+      "description": "Identifier and version of the algorithm/model that produced the PHM values.",
+      "type": "string",
+      "ditto:category": "phm"
+    }
+  },
+  "events": {
+    "conditionChanged": {
+      "title": "Condition changed",
+      "data": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    }
+  }
+}

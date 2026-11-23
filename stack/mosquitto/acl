@@ -1,0 +1,16 @@
+# Topic contract (see stack/README.md):
+#   phm/raw/<thing_id>/<feature_id>   high-rate samples  -> Telegraf -> InfluxDB
+#   phm/state/<thing_id>              Ditto Protocol      -> Ditto (twin state)
+
+# Edge adapters: publish only.
+user edge
+topic write phm/raw/#
+topic write phm/state/#
+
+# Ditto connectivity: twin state only.
+user ditto
+topic read phm/state/#
+
+# Telegraf: raw samples only.
+user telegraf
+topic read phm/raw/#

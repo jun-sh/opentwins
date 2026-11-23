@@ -1,0 +1,37 @@
+{
+  "@context": [
+    "https://www.w3.org/2022/wot/td/v1.1",
+    { "ditto": "https://ditto.eclipseprojects.io/wot/ditto-extension#" }
+  ],
+  "@type": "tm:ThingModel",
+  "title": "Controller",
+  "description": "Control unit of an asset (robot controller, PLC, drive cabinet).",
+  "version": { "model": "1.0.0" },
+  "links": [
+    {
+      "rel": "tm:extends",
+      "href": "http://phm-models/models/base/monitored-component-1.0.0.tm.jsonld",
+      "type": "application/tm+json"
+    }
+  ],
+  "tm:optional": [
+    "/properties/lastAssessedAt",
+    "/properties/modelRef",
+    "/events/conditionChanged",
+    "/properties/cpuTemperature",
+    "/properties/cpuLoad",
+    "/properties/commLatencyMs",
+    "/properties/faultCodes",
+    "/properties/firmwareVersion",
+    "/properties/systemVersion"
+  ],
+  "properties": {
+    "mode":            { "title": "Operating mode (vendor string)", "type": "string", "ditto:category": "status" },
+    "cpuTemperature":  { "title": "CPU temperature", "type": "number", "unit": "Cel", "ditto:category": "status" },
+    "cpuLoad":         { "title": "CPU load", "type": "number", "minimum": 0, "maximum": 1, "ditto:category": "status" },
+    "commLatencyMs":   { "title": "Control-loop communication latency", "type": "number", "unit": "ms", "ditto:category": "status" },
+    "faultCodes":      { "title": "Active fault codes", "type": "array", "items": { "type": "string" }, "ditto:category": "status" },
+    "firmwareVersion": { "title": "Firmware version", "type": "string", "ditto:category": "configuration" },
+    "systemVersion":   { "title": "System version", "type": "string", "ditto:category": "configuration" }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "entries": {
+    "OWNER": {
+      "subjects": { "nginx:ditto": { "type": "nginx basic auth user" } },
+      "resources": {
+        "thing:/":   { "grant": ["READ", "WRITE"], "revoke": [] },
+        "policy:/":  { "grant": ["READ", "WRITE"], "revoke": [] },
+        "message:/": { "grant": ["READ", "WRITE"], "revoke": [] }
+      }
+    },
+    "INGEST": {
+      "subjects": { "integration:phm-ingest": { "type": "Ditto MQTT connection phm-mqtt-ingest" } },
+      "resources": {
+        "thing:/features": { "grant": ["READ", "WRITE"], "revoke": [] }
+      }
+    }
+  }
+}
