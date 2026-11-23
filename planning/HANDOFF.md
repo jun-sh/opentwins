@@ -30,7 +30,7 @@
 | P2 Type 复用 | 🟡 Panda 适配器 `stack/adapters/panda_franka_mqtt.py` 已写好，fake 后端端到端通过（核心代码改动 0 行），**真机未跑**（无访问方式）；PiperX 适配器 + TM + 孪生 `lab.robots:piperx-001` 已建，fake 后端端到端通过，**真机未跑** |
 | P3 PHM 链路 | 🟡 G1：PHM worker（ProgPy 热模型 + PyOD ECOD）每 120 s 写回 29 个关节的 `phm` ✅；Event Frame（InfluxDB `event_frame` + Ditto `conditionChanged`）✅；Grafana `G1 PHM Health` ✅；Atlas CMMS 只评估未部署（见 `p3-phm.md`）；`maxTemperature` 用占位 80 °C |
 | P4 核电演示 | 🟡 OPC UA 泵组模拟器 + Telegraf OPC UA→MQTT + 孪生 `plant.sim:pump-set-01` + Grafana 面板 ✅（DGX 上运行，核心代码改动 0 行）；见 §5 P4 |
-| P5 加固 | ⬜ 离线部署、SBOM、审计 |
+| P5 加固 | 🟡 离线部署 + SBOM ✅（无网络隔离环境安装已验证，见 §5 P5）；审计未做 |
 
 ## 4. 当前环境
 
@@ -45,6 +45,17 @@
 G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab.robots:g1-001`（31 个 Feature）、适配器 `stack/adapters/g1_dds_mqtt.py`（167 行，已登记；原始数据已压缩以适应跳板机 WiFi，入库 99.5–100%）、Grafana 面板 `G1 Thermal & Battery`、跳板机 systemd 常驻服务。
 
 **优先级建议**（不依赖人的工作已做完，以下都要人提供信息或到现场）：① 查明 G1 `rt/lowstate` 间歇停发（18:36、20:05 CST 各一次，BMS 正常），可能是有人在用或切了模式；② 提供 Panda、PiperX 真机接入方式（哪台机器、控制柜 IP / CAN 口），然后跑通两个适配器并记录采样率和丢包；③ 确认 G1 关节 `maxTemperature`（现为占位 80 °C）和 PHM 阈值；④ 决定是否部署 Atlas CMMS（AGPL）；⑤ P5 加固（离线部署、SBOM）可无人值守进行；⑥ 有条件时把跳板机改为有线连 DGX（WiFi 余量约 0.7 MB/s）。
+
+### P5 离线部署与 SBOM 状态（2026-11-23，分支 `claude/phm-p5-offline-sbom-f4b530`）
+- 全部在 `stack/offline/`，用法见 `stack/README.md` 的 P5 小节。**核心文件改动 0 个**：三个 compose 文件、Dockerfile、`scripts/`、各类配置均未修改；只新增 `offline/` 下文件，外加 `stack/README.md`（登记表 + P5 小节）和本文件（文档）。
+- `bundle.sh lock`：`images.lock` 把 compose 文件和 Dockerfile 中的 13 个上游镜像引用固定到注册表摘要（取自本机正在运行的镜像）；`python/phm-worker.lock.txt`（29 个制品）、`python/pump-sim.lock.txt`（13 个）记录每个 PyPI 制品的 sha256（x86_64、cp311）。
+- `bundle.sh build`：按哈希下载 wheel（`fastdtw`、`wait_for2` 只有 sdist，打包时在固定的 Python 基础镜像中构建成 wheel，sdist 一并放入包中供审计），用 `docker build --network none` 构建 3 个自定义镜像（标签带 `-offline`，不覆盖运行中的 `phm-worker:0.1` 等），`docker save` 共 16 个镜像，生成 SBOM 和许可证汇总，输出 `dist/opentwins-phm-offline-<日期>-<提交>-<arch>.tar`（本次 1.9 GB，sha256 `051020345a6a…`）+ `.tar.sha256`，包内有 `SHA256SUMS`。本机上的 tar 不进 git（`dist/` 已忽略）。
+- `install.sh`：校验 → `docker load` → 逐个核对镜像 ID → 解包 `stack/` → `init-env.sh`（密钥在目标机生成，不进包）→ 三个项目用离线覆盖文件（`pull_policy: never`、`--no-build`）启动 → 等待 InfluxDB/Grafana/Ditto → `provision.sh` → `smoke-test.sh`。`--rebuild` 在无网络情况下从包内 wheel 重新构建自定义镜像。
+- **验证**（`offline/test/offline-proof.sh`）：在 `--network none` 的一次性 Docker-in-Docker 中（镜像库为空，网卡只有 lo/docker0，访问 Docker Hub 和 PyPI 失败）安装本次的包并加 `--rebuild`：16 个镜像 ID 全部一致；InfluxDB `pass` v2.10.1、Grafana `ok` 12.4.9、Ditto `UP`；provision 全部 201；smoke test 两项 PASS；15 个容器 restarts=0、5 个 Ditto 服务 healthy；P4 链路（OPC UA 模拟器 → Telegraf → MQTT → Ditto）`pump-set-01` 有实时转速；PHM worker 第一轮因 Ditto 尚未启动返回 502，下一轮（120 s 后）正常（29 个关节因无 G1 数据标为 stale，符合预期）。全程约 3 分钟；结束后只删除了自己的容器和卷，运行中的服务栈未受影响（启动时间未变）。
+- SBOM：Syft v1.56.0（CycloneDX JSON），漏洞：Grype v0.121.1（数据库 2026-11-23），两者都按摘要固定。仓库内副本在 `stack/offline/sbom/`：`cyclonedx.tar.gz`（每个镜像一份 + 自定义镜像的 Python 专用 SBOM）、`licence-summary.md`、`licence-flags.csv`、`vuln-summary.md`。
+- **许可证（需法务，未做决定）**：已知 Grafana AGPL-3.0、ProgPy NOSA（NASA-1.3）、Atlas CMMS AGPL（未部署）。**新发现**：MongoDB 7.0 为 SSPL-1.0（非 OSI，Ditto 的存储）；mongo 镜像内的 `mongodb-mongosh` 声明 `Apache-2.0 ; Proprietary`；asyncua 为 LGPL-3.0（只在模拟器中）；Python 依赖 `certifi` 为 MPL-2.0、`autocommand` 为 LGPL-3.0。Go/Java 组件大量显示 unknown（扫描器读不到二进制里的许可证），产品级许可证见手工维护的 `offline/components.json`。
+- 漏洞（匹配数）：Grafana 33 Critical/154 High、ditto-ui 16/63、InfluxDB 4/61、Python 基础镜像（含 worker、模拟器）4/99、mongo 3/43；Ditto 后端服务 0 Critical、6–8 High。均为上游镜像自带，未升级任何版本（升级需人决定）。
+- 遗留：一个包只支持一种 CPU 架构（arm64 需重新 lock）；sdist 构建后端在打包时从 PyPI 取、未固定；审计（访问日志、变更记录）未做；离线 Dockerfile 需与在线版手工保持一致。
 
 ### P2 Panda 适配器状态（2026-11-23）
 - `stack/adapters/panda_franka_mqtt.py`（208 行，已登记）：`Robot.read_once()` 循环读 `RobotState`，映射 `q→position`、`dq→velocity`、`tau_J→torque`、`theta→motorPosition`、`tau_ext_hat_filtered→externalTorque`；`faultCode` 位 0 = `joint_collision[i]`、位 1 = `joint_contact[i]`、位 2 = 任一 `current_errors`；`controller.status` 写 `mode`（`kIdle` 等）和 `faultCodes`（激活的错误名）。丢包按 `RobotState.time` 的毫秒跳变统计（每 10 s 打印）。
