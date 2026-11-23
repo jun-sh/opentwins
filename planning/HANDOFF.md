@@ -1,6 +1,6 @@
-# 交接文档（更新于 2026-11-23，P2 Panda 适配器）
+# 交接文档（更新于 2026-11-23，P3 PHM 链路）
 
-新对话从这里开始：先读本文件，按需再读 `p0-verification.md`、`type-design.md`、`../stack/README.md`。
+新对话从这里开始：先读本文件，按需再读 `p0-verification.md`、`type-design.md`、`p3-phm.md`、`../stack/README.md`。
 
 ## 1. 目标（一句话）
 
@@ -28,7 +28,7 @@
 | P0 选型冻结 | ✅ |
 | P1 单机打通 | 🟡 中心服务栈 ✅、Panda 孪生 + 模拟数据 ✅；**G1 29 自由度：TM、孪生、适配器、真机上行 ✅；Grafana 面板 ✅** |
 | P2 Type 复用 | 🟡 Panda 适配器 `stack/adapters/panda_franka_mqtt.py` 已写好，fake 后端端到端通过（核心代码改动 0 行），**真机未跑**（无访问方式）；PiperX ⬜ |
-| P3 PHM 链路 | ⬜ ProgPy/PyOD → 写回 `phm`；Event Frame；Atlas CMMS |
+| P3 PHM 链路 | 🟡 G1：PHM worker（ProgPy 热模型 + PyOD ECOD）每 120 s 写回 29 个关节的 `phm` ✅；Event Frame（InfluxDB `event_frame` + Ditto `conditionChanged`）✅；Grafana `G1 PHM Health` ✅；Atlas CMMS 只评估未部署（见 `p3-phm.md`）；`maxTemperature` 用占位 80 °C |
 | P4 核电演示 | ⬜ |
 | P5 加固 | ⬜ 离线部署、SBOM、审计 |
 
@@ -44,13 +44,20 @@
 
 G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab.robots:g1-001`（31 个 Feature）、适配器 `stack/adapters/g1_dds_mqtt.py`（159 行，已登记）、Grafana 面板 `G1 Thermal & Battery`、跳板机 systemd 常驻服务。
 
-**优先级建议**：① 把分支推送并开 PR；② P2：Panda 真机适配器（验证"核心代码 0 行改动"）；③ P3：用 G1 温度做 ProgPy 热模型、写回 `phm`。
+**优先级建议**：① 合并 P3 分支；② 确认 G1 `maxTemperature`；③ P2：Panda 真机适配器；④ P4 核电演示。
 
 ### P2 Panda 适配器状态（2026-11-23）
 - `stack/adapters/panda_franka_mqtt.py`（208 行，已登记）：`Robot.read_once()` 循环读 `RobotState`，映射 `q→position`、`dq→velocity`、`tau_J→torque`、`theta→motorPosition`、`tau_ext_hat_filtered→externalTorque`；`faultCode` 位 0 = `joint_collision[i]`、位 1 = `joint_contact[i]`、位 2 = 任一 `current_errors`；`controller.status` 写 `mode`（`kIdle` 等）和 `faultCodes`（激活的错误名）。丢包按 `RobotState.time` 的毫秒跳变统计（每 10 s 打印）。
 - 后端：`pylibfranka`（FR3，系统 ≥ 5，libfranka ≥ 0.16，PyPI 轮子 ≥ 0.20.2；无 `server_version()`，`RobotMode` 名无 k 前缀，`Duration` 只有 `to_sec`）、`panda_py`（Panda 系统 4.x，需对应 libfranka 0.9.x 构建）、`fake`（合成数据，离线测试）。绑定差异已在代码里兼容，依据为两个仓库的 pybind 源码，**未在真机验证**。
 - 离线验证（fake，DGX 本机，注入 0.2% 丢包）：适配器统计 1000 Hz、丢 0.20%；Ditto `panda-001` 7 个关节 + controller 实时更新；InfluxDB 7 个关节都有 `motorPosition` 等字段，但只入库约 30%（见 §6 Telegraf 丢数）。核心代码（TM、`provision.sh`、Telegraf/Ditto 配置）改动 0 行。
 - 真机步骤：① Desk（浏览器打开控制柜 IP）Settings→System 读系统版本，激活 FCI；② 4.x → `--backend panda_py`，≥ 5 → `--backend pylibfranka`（`pip install pylibfranka==<与系统匹配的版本>`）；版本不匹配时连接报错会给出 server version；③ `MQTT_EDGE_PASSWORD=... python panda_franka_mqtt.py --backend <b> --robot-ip <ip> --mqtt-host 10.10.60.128 --duration 60`，记录 `[stats]` 的采样率和丢包；④ 仿照 G1 做 systemd 单元。注意 FCI 同时只允许一个客户端。
+
+### P3 PHM 状态（2026-11-23，分支 `claude/phm-p3-pipeline-4cb468`）
+- 设计、参数、局限、Atlas 评估：`planning/p3-phm.md`。核心代码（TM、Ditto/Telegraf/mosquitto 配置、主 compose）改动 0 行；worker 是独立 compose 项目 `phm-analytics`（`stack/phm/`），只加入 `phm_default` 网络。
+- 运行：`cd stack/phm && docker-compose -p phm-analytics --env-file ../.env up -d --build`（`-p` 必须带）。`restart: unless-stopped` + `init: true`；进程被 kill -9 后自动拉起已验证；未结束的 Event Frame 重启后从 InfluxDB 恢复（已用临时 thing_id 验证后删除）。
+- Grafana 面板 `G1 PHM Health`（uid `phm-g1-health`）已通过 API 导入运行中的 Grafana；文件在 `stack/grafana/dashboards/g1-phm-health.json`，分支合并后由文件 provisioning 接管。
+- 待人工：① 宇树 G1 关节过温限值 → 写入各关节 `configuration.maxTemperature`；② 是否部署 Atlas CMMS（AGPL）；③ 阈值（watch/alert）需要带载数据后再调。
+- 注意：10:36–11:20 UTC 期间 G1 关节数据中断（电池数据正常），原因不明（未登录跳板机查看）；worker 对 10 min 无数据的关节不评估。
 
 ### G1 运行状态
 - 跳板机用户服务 `g1-adapter`：`systemctl --user status|restart|stop g1-adapter`，日志 `journalctl --user -u g1-adapter`。单元文件在 `stack/adapters/systemd/`；`~/phm-adapter/env`（权限 600）存 MQTT 密码；已 `enable-linger`。kill -9 后 5 秒自动拉起已验证；**整机重启后自启未实测**。更新适配器：scp 到 `~/phm-adapter/` 后 restart。在 G1 上做别的底层调试前可先 stop（适配器只订阅，不下发）。

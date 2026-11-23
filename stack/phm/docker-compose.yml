@@ -1,0 +1,25 @@
+# PHM analytics (P3): separate compose project so it can be built/restarted without touching the
+# shared services. Joins the main stack's network; credentials from ../.env.
+#   cd stack/phm && docker-compose up -d --build
+name: phm-analytics
+services:
+  phm-worker:
+    build: .
+    image: phm-worker:0.1
+    restart: unless-stopped
+    init: true   # tini as PID 1: signals and crash restarts behave
+    environment:
+      DITTO_USER: ${DITTO_USER:-admin}
+      DITTO_USER_PASSWORD: ${DITTO_USER_PASSWORD:?run scripts/init-env.sh}
+      INFLUX_TOKEN: ${INFLUX_TOKEN:?run scripts/init-env.sh}
+      PHM_THING_ID: lab.robots:g1-001
+      PHM_PERIOD_S: "120"
+      PHM_DEFAULT_MAX_TEMP: "80"   # placeholder: Unitree G1 joint limit not confirmed
+    networks: [phm]
+    logging:
+      options:
+        max-size: 20m
+networks:
+  phm:
+    external: true
+    name: phm_default

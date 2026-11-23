@@ -1,0 +1,368 @@
+{
+  "uid": "phm-g1-health",
+  "title": "G1 PHM Health",
+  "tags": [
+    "phm",
+    "g1"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Event frames",
+        "enable": true,
+        "iconColor": "orange",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-phm"
+        },
+        "target": {
+          "refId": "Anno",
+          "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"event_frame\" and r.thing_id == \"${thing_id}\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({_time: r._time, text: r.feature_id + \": \" + r.phase + \" \" + r.condition + \" (\" + r.reason + \")\", tags: r.feature_id}))"
+        }
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "thing_id",
+        "label": "Asset",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-phm"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"raw\", tag: \"thing_id\", predicate: (r) => r._measurement == \"phm\", start: -30d)",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Latest PHM per joint (sorted by health index)",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 11
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-phm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-phm"
+          },
+          "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"phm\" and r.thing_id == \"${thing_id}\")\n  |> last()\n  |> pivot(rowKey: [\"feature_id\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> keep(columns: [\"feature_id\", \"condition\", \"healthIndex\", \"anomalyScore\", \"rulHours\", \"temperature\"])\n  |> sort(columns: [\"healthIndex\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "condition"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "normal": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "watch": {
+                        "color": "yellow",
+                        "index": 1
+                      },
+                      "alert": {
+                        "color": "orange",
+                        "index": 2
+                      },
+                      "fault": {
+                        "color": "red",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "healthIndex"
+            },
+            "properties": [
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 1
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.5
+                    },
+                    {
+                      "color": "green",
+                      "value": 0.8
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rulHours"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "h"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temperature"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              },
+              {
+                "id": "displayName",
+                "value": "hotspot temp"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Health index",
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-phm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-phm"
+          },
+          "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"phm\" and r.thing_id == \"${thing_id}\" and r._field == \"healthIndex\")\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, feature: r.feature_id}))\n  |> group(columns: [\"feature\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Anomaly score (PyOD ECOD; 1 = threshold)",
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-phm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-phm"
+          },
+          "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"phm\" and r.thing_id == \"${thing_id}\" and r._field == \"anomalyScore\")\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, feature: r.feature_id}))\n  |> group(columns: [\"feature\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "RUL to maxTemperature (ProgPy; capped at horizon)",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-phm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-phm"
+          },
+          "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"phm\" and r.thing_id == \"${thing_id}\" and r._field == \"rulHours\")\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, feature: r.feature_id}))\n  |> group(columns: [\"feature\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Condition level (0 normal, 1 watch, 2 alert, 3 fault)",
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-phm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-phm"
+          },
+          "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"phm\" and r.thing_id == \"${thing_id}\" and r._field == \"conditionLevel\")\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, feature: r.feature_id}))\n  |> group(columns: [\"feature\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 3,
+          "decimals": 0,
+          "custom": {
+            "lineInterpolation": "stepAfter"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false
+        }
+      }
+    }
+  ]
+}
