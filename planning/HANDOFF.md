@@ -1,4 +1,4 @@
-# 交接文档（更新于 2026-11-23，P3 PHM 链路）
+# 交接文档（更新于 2026-11-23 20:10 CST：P2 适配器、P3、P4 已合并，G1 上行稳定）
 
 新对话从这里开始：先读本文件，按需再读 `p0-verification.md`、`type-design.md`、`p3-phm.md`、`../stack/README.md`。
 
@@ -34,17 +34,17 @@
 
 ## 4. 当前环境
 
-- 分支 `feat/phm-p1-stack` 已推送到 fork（远程 `fork` = jun-sh/opentwins），PR：https://github.com/jun-sh/opentwins/pull/1（fork 内，base main，未合并）。`origin` 是上游 ertis-research/opentwins，不要推送到那里。服务栈运行在本机 DGX 上（12 个容器，项目名 `phm`）。
+- 分支 `feat/phm-p1-stack` 已推送到 fork（远程 `fork` = jun-sh/opentwins），PR：https://github.com/jun-sh/opentwins/pull/1（fork 内，base main，未合并）。`origin` 是上游 ertis-research/opentwins，不要推送到那里。服务栈运行在本机 DGX 上（核心 compose 项目 `phm`；另有独立项目 `phm-analytics`（P3 worker，`stack/phm/`）和 P4 泵组模拟（`stack/plant-sim/`），均只加入 `phm_default` 网络）。
 - 登录：Grafana http://127.0.0.1:13000，Ditto UI http://127.0.0.1:18080/ui/。两者都用 `admin`，密码在 `stack/.env`（git 忽略）。
 - MQTT 供边缘接入：`<DGX>:11883`，用户 `edge`。主题约定见 `stack/README.md`。
 - **G1 跳板机**：`ssh server@10.10.61.210`（本机已配好 SSH 密钥，不用密码）。网卡 `enp6s0`（192.168.123.99）直连 G1 内网，G1 的 PC2 是 192.168.123.164。可用的 SDK 解释器：`/home/server/workspace/gr00t_wbc/.venv/bin/python`（含 `unitree_sdk2py`）。**gr00t_wbc 属于他人正在进行的工作，禁止修改其中任何文件**：脚本放在 `/tmp` 或自己的目录，运行时设置 `PYTHONDONTWRITEBYTECODE=1`。
-- 已有孪生 `lab.robots:panda-001`（InfluxDB 里有模拟数据）和 `lab.robots:g1-001`（真机实时数据）。模拟器在会话临时目录中，**不在仓库里**，可能已被清理。
+- 孪生：`lab.robots:g1-001`（真机实时数据 + PHM 评估）、`lab.robots:panda-001` 和 `lab.robots:piperx-001`（只有 fake 后端测试数据）、`plant.sim:pump-set-01`（OPC UA 模拟器实时数据）。模拟器在会话临时目录中，**不在仓库里**，可能已被清理。
 
 ## 5. 下一步
 
-G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab.robots:g1-001`（31 个 Feature）、适配器 `stack/adapters/g1_dds_mqtt.py`（159 行，已登记）、Grafana 面板 `G1 Thermal & Battery`、跳板机 systemd 常驻服务。
+G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab.robots:g1-001`（31 个 Feature）、适配器 `stack/adapters/g1_dds_mqtt.py`（167 行，已登记；原始数据已压缩以适应跳板机 WiFi，入库 99.5–100%）、Grafana 面板 `G1 Thermal & Battery`、跳板机 systemd 常驻服务。
 
-**优先级建议**：① 合并 P3 分支；② G1 恢复在线后复查 P3 实时链路；③ 确认 G1 `maxTemperature`；④ P2：Panda 真机适配器。
+**优先级建议**（不依赖人的工作已做完，以下都要人提供信息或到现场）：① 查明 G1 `rt/lowstate` 间歇停发（18:36、20:05 CST 各一次，BMS 正常），可能是有人在用或切了模式；② 提供 Panda、PiperX 真机接入方式（哪台机器、控制柜 IP / CAN 口），然后跑通两个适配器并记录采样率和丢包；③ 确认 G1 关节 `maxTemperature`（现为占位 80 °C）和 PHM 阈值；④ 决定是否部署 Atlas CMMS（AGPL）；⑤ P5 加固（离线部署、SBOM）可无人值守进行；⑥ 有条件时把跳板机改为有线连 DGX（WiFi 余量约 0.7 MB/s）。
 
 ### P2 Panda 适配器状态（2026-11-23）
 - `stack/adapters/panda_franka_mqtt.py`（208 行，已登记）：`Robot.read_once()` 循环读 `RobotState`，映射 `q→position`、`dq→velocity`、`tau_J→torque`、`theta→motorPosition`、`tau_ext_hat_filtered→externalTorque`；`faultCode` 位 0 = `joint_collision[i]`、位 1 = `joint_contact[i]`、位 2 = 任一 `current_errors`；`controller.status` 写 `mode`（`kIdle` 等）和 `faultCodes`（激活的错误名）。丢包按 `RobotState.time` 的毫秒跳变统计（每 10 s 打印）。
