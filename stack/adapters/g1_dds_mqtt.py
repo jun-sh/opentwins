@@ -21,12 +21,15 @@ assert len(JOINTS) == 29
 
 # Unit assumptions for BmsState_ (verify with --dry-run on the robot): mV and mA.
 BMS_V_SCALE, BMS_I_SCALE, N_CELLS, N_TEMPS = 1e-3, 1e-3, 13, 4
+# Raw payload shaping for the WiFi uplink: slow fields (voltage, temperatures, fault) at least every 100 ms.
+SLOW_US = 100_000
 
 
 class Adapter:
     def __init__(self, a):
         self.a, self.lock = a, threading.Lock()
         self.raw = [[] for _ in JOINTS]      # pending raw samples per joint
+        self.slow_last, self.slow_ts = [None] * 29, [0] * 29  # last emitted slow fields per joint
         self.latest = None                   # latest LowState_ motor snapshot
         self.bms = None
         self.board = None
@@ -56,9 +59,14 @@ class Adapter:
             ms = m.motor_state
             for i in range(29):
                 s = ms[i]
-                self.raw[i].append({"ts": ts, "position": s.q, "velocity": s.dq, "torque": s.tau_est,
-                                    "busVoltage": s.vol, "windingTemperature": s.temperature[0],
-                                    "driverTemperature": s.temperature[1], "faultCode": s.motorstate})
+                # Fast fields every sample, rounded below float32 noise (~1e-5 rad) to cut JSON size.
+                smp = {"ts": ts, "position": round(s.q, 5), "velocity": round(s.dq, 4), "torque": round(s.tau_est, 3)}
+                slow = (round(s.vol, 2), s.temperature[0], s.temperature[1], s.motorstate)
+                # Slow fields only on change or every SLOW_US, so faults are never missed.
+                if slow != self.slow_last[i] or ts - self.slow_ts[i] >= SLOW_US:
+                    smp.update(busVoltage=slow[0], windingTemperature=slow[1], driverTemperature=slow[2], faultCode=slow[3])
+                    self.slow_last[i], self.slow_ts[i] = slow, ts
+                self.raw[i].append(smp)
             self.latest = [(s.q, s.dq, s.tau_est, s.vol, s.temperature[0], s.temperature[1], s.motorstate)
                            for s in ms[:29]]
             self.mode_machine = m.mode_machine
@@ -81,7 +89,7 @@ class Adapter:
             batches, self.raw = self.raw, [[] for _ in JOINTS]
         for name, samples in zip(JOINTS, batches):
             if samples:
-                self._pub(f"phm/raw/{self.a.thing}/{name}", json.dumps({"samples": samples}))
+                self._pub(f"phm/raw/{self.a.thing}/{name}", json.dumps({"samples": samples}, separators=(",", ":")))
 
     def publish_state(self):
         with self.lock:

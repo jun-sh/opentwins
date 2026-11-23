@@ -54,7 +54,7 @@ validates every write. Ditto blocks Thing Model downloads from private addresses
 | `scripts/provision.sh` | 40 | PUT declarative JSON to the Ditto API |
 | `scripts/smoke-test.sh` | 27 | end-to-end check |
 | `adapters/systemd/g1-adapter.service` | 15 | user unit for the adapter on the G1 jump host (config, not code) |
-| `adapters/g1_dds_mqtt.py` | 161 | G1 29-DoF DDS (`rt/lowstate`, `bmsstate`) → MQTT; subscribe-only. Run on the G1 jump host: `PYTHONPATH=<dir with paho> python g1_dds_mqtt.py --iface enp6s0 --mqtt-host <DGX>`; needs `MQTT_EDGE_PASSWORD` |
+| `adapters/g1_dds_mqtt.py` | 167 | G1 29-DoF DDS (`rt/lowstate`, `bmsstate`) → MQTT; subscribe-only. Run on the G1 jump host: `PYTHONPATH=<dir with paho> python g1_dds_mqtt.py --iface enp6s0 --mqtt-host <DGX>`; needs `MQTT_EDGE_PASSWORD`. Raw payload is compacted for the WiFi uplink: fast fields rounded, slow fields (voltage, temperatures, fault) only on change or every 100 ms |
 | `phm/phm_worker.py` | 244 | P3 PHM worker: InfluxDB 30 s aggregates → PyOD ECOD `anomalyScore` + ProgPy thermal `rulHours` → Ditto `phm` (HTTP merge patch), InfluxDB `phm` and `event_frame`, Ditto `conditionChanged` event; marks joints without fresh data `stale`; `phm_worker.py <ISO time>...` replays history read-only. See `../planning/p3-phm.md` |
 | `phm/thermal_model.py` | 73 | ProgPy `PrognosticsModel`: first-order joint thermal model, parameter fit, time to `maxTemperature` |
 | `phm/Dockerfile`, `phm/docker-compose.yml` | 34 | worker image and its own compose project `phm-analytics` (config, not code) |
