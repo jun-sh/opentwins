@@ -1,0 +1,6 @@
+FROM docker.io/library/python:3.11-slim-bookworm
+RUN pip install --no-cache-dir asyncua==1.1.8
+COPY pump_set_opcua_sim.py /app/
+USER nobody
+EXPOSE 4840
+CMD ["python", "-u", "/app/pump_set_opcua_sim.py"]
