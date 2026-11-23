@@ -34,28 +34,36 @@
 
 ## 4. 当前环境
 
-- 分支 `feat/phm-p1-stack`（未推送，没有 PR）。服务栈运行在本机 DGX 上（12 个容器，项目名 `phm`）。
+- 分支 `feat/phm-p1-stack`（未推送，没有 PR）。**`origin` 现在指向上游 `ertis-research/opentwins`，推送前先确认目标远程**。服务栈运行在本机 DGX 上（12 个容器，项目名 `phm`）。
 - 登录：Grafana http://127.0.0.1:13000，Ditto UI http://127.0.0.1:18080/ui/。两者都用 `admin`，密码在 `stack/.env`（git 忽略）。
 - MQTT 供边缘接入：`<DGX>:11883`，用户 `edge`。主题约定见 `stack/README.md`。
 - **G1 跳板机**：`ssh server@10.10.61.210`（本机已配好 SSH 密钥，不用密码）。网卡 `enp6s0`（192.168.123.99）直连 G1 内网，G1 的 PC2 是 192.168.123.164。可用的 SDK 解释器：`/home/server/workspace/gr00t_wbc/.venv/bin/python`（含 `unitree_sdk2py`）。**gr00t_wbc 属于他人正在进行的工作，禁止修改其中任何文件**：脚本放在 `/tmp` 或自己的目录，运行时设置 `PYTHONDONTWRITEBYTECODE=1`。
-- 已有孪生 `lab.robots:panda-001`，InfluxDB 里有 30 分钟的模拟数据。模拟器在会话临时目录中，**不在仓库里**，可能已被清理。
+- 已有孪生 `lab.robots:panda-001`（InfluxDB 里有模拟数据）和 `lab.robots:g1-001`（真机实时数据）。模拟器在会话临时目录中，**不在仓库里**，可能已被清理。
 
-## 5. 下一步：G1 剩余工作
+## 5. 下一步
 
-已完成（2026-11-23，提交见 git log）：battery-pack / G1 29dof TM，`lab.robots:g1-001`（31 个 Feature），`stack/adapters/g1_dds_mqtt.py`（154 行，已登记）。已在跳板机 `~/phm-adapter/` 上对真机实测：`rt/lowstate` ≈1040 Hz，丢包 0.01–0.11%；Ditto 与 InfluxDB（29 个关节）均有数据；跳板机能连 DGX MQTT（10.10.60.128:11883）。paho 是从 DGX 复制到 `~/phm-adapter/lib/`（不碰 gr00t_wbc 的 venv）。
+G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab.robots:g1-001`（31 个 Feature）、适配器 `stack/adapters/g1_dds_mqtt.py`（159 行，已登记）、Grafana 面板 `G1 Thermal & Battery`、跳板机 systemd 常驻服务。
 
-- BMS 单位已核实：`cell_vol`、`bmsvoltage` 为 mV，`current` 为 mA（机器人开机时为负），`temperature` 为 °C。
-- `ratedTorque` 暂用 `unitree_rl_gym/.../g1_29dof.urdf` 的 `effort`（峰值力矩上限，不是额定值）；`motor_info.md` 未找到，需要时再替换。
-- **适配器已常驻**：跳板机用户服务 `g1-adapter`（`systemctl --user status|restart g1-adapter`，日志 `journalctl --user -u g1-adapter`），单元文件在 `stack/adapters/systemd/`，`~/phm-adapter/env`（权限 600）存 MQTT 密码；已 `enable-linger`，开机自启；kill -9 后 5 秒自动拉起已验证。更新适配器：scp 新文件后 restart。
-- 未做：用 `unitree_mujoco` 仿真测试（真机已覆盖验证）；`mainboardstate` 映射到 `controller`（`temperature[0]`≈44 °C 是否为 CPU 温度待确认，因此未映射）；
-- Grafana 面板 `G1 Thermal & Battery`（`stack/grafana/dashboards/g1-thermal-battery.json`）：SOC/SOH/循环/电压/电流/最热绕组，29 关节绕组与驱动温度，电池电压/单体极值/温度。查询已通过 Grafana API 验证（数据可用、无报错），视觉效果未人工看过。电池 raw 在适配器中拍平为标量字段（`cellVoltageMin/Max`、`temperature0..3`）写入 InfluxDB，因为 raw 通道只支持标量。
-- `provision.sh` 现在对已存在的 Thing 只更新 attributes（否则 PUT 会因 WoT 校验缺少骨架 Feature 而 400）。
+**优先级建议**：① 把分支推送并开 PR；② P2：Panda 真机适配器（验证"核心代码 0 行改动"）；③ P3：用 G1 温度做 ProgPy 热模型、写回 `phm`。
+
+### G1 运行状态
+- 跳板机用户服务 `g1-adapter`：`systemctl --user status|restart|stop g1-adapter`，日志 `journalctl --user -u g1-adapter`。单元文件在 `stack/adapters/systemd/`；`~/phm-adapter/env`（权限 600）存 MQTT 密码；已 `enable-linger`。kill -9 后 5 秒自动拉起已验证；**整机重启后自启未实测**。更新适配器：scp 到 `~/phm-adapter/` 后 restart。在 G1 上做别的底层调试前可先 stop（适配器只订阅，不下发）。
+- 实测：`rt/lowstate` ≈1040 Hz，丢包 0.01–0.12%；Ditto 与 InfluxDB（29 关节 + battery）均有数据。paho 从 DGX 复制到 `~/phm-adapter/lib/`（不碰 gr00t_wbc 的 venv）。跳板机连 DGX MQTT 用 10.10.60.128:11883。
+- BMS 单位：`cell_vol`、`bmsvoltage` 为 mV，`current` 为 mA（开机时为负），`temperature` 为 °C。
+- 电池 raw 在适配器中拍平为标量字段（`cellVoltageMin/Max`、`temperature0..3`）写入 InfluxDB，因为 raw 通道只支持标量。
+- `provision.sh` 对已存在的 Thing 只更新 attributes（PUT 会因 WoT 校验缺骨架 Feature 而 400）。
+
+### G1 遗留
+- `ratedTorque` 暂用 `unitree_rl_gym/.../g1_29dof.urdf` 的 `effort`（峰值上限，不是额定值）；`motor_info.md` 未找到。
+- `temperature[0..1]` 是否为绕组/驱动器温度未经宇树文档确认（面板标题已注明）。
+- `mainboardstate` 未映射到 `controller`（`temperature[0]`≈44 °C 是否为 CPU 温度待确认）。
+- 未用 `unitree_mujoco` 仿真测试（真机已覆盖）。
 
 ## 6. 阻塞与未验证
 
-- G1 主控固件版本：**暂时无法获取，不阻塞开发**。实验室没有宇树 App；`LowState.version` 为 `[0,0]`；loco/audio 服务的 `GetServerApiVersion` 返回错误 3102/3104（高层服务未响应，可能因机器人处于底层调试模式）。已知的版本线索：`mode_machine=5`、BMS 固件 1.3。孪生中 `controller.configuration.firmwareVersion` 暂不填写（它在 TM 中是可选项）。`rt/lf/mainboardstate` 可读（主板温度、电压），可映射到 `controller`。
+- G1 主控固件版本：**暂时无法获取，不阻塞开发**。实验室没有宇树 App；`LowState.version` 为 `[0,0]`；loco/audio 服务的 `GetServerApiVersion` 返回错误 3102/3104（高层服务未响应，可能因机器人处于底层调试模式）。已知的版本线索：`mode_machine=5`、BMS 固件 1.3。孪生中 `controller.configuration.firmwareVersion` 暂不填写（它在 TM 中是可选项）。`rt/lf/mainboardstate` 可读（主板温度、电压），映射见 §5 遗留。
 - 待真机读取：Franka 系统版本（Panda 还是 FR3）、PiperX 固件版本（≥ 1.8-8 需用 `C_PiperInterface_V3`）。
-- 未验证：MQTT ACL（smoke test 没覆盖）、Grafana 曲线的视觉效果、Telegraf 磁盘缓冲的容量上限。
+- 未验证：MQTT ACL（smoke test 没覆盖）、Grafana 面板的视觉效果（查询已用 API 验证）、Telegraf 磁盘缓冲的容量上限。
 - 许可证：Grafana 和 Atlas CMMS 为 AGPL，ProgPy 为 NOSA，交付核电前需要法务意见。
 
 ## 7. 常用命令（在 `stack/` 下执行）
