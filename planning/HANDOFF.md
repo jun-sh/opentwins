@@ -26,7 +26,7 @@
 | 阶段 | 状态 |
 |---|---|
 | P0 选型冻结 | ✅ |
-| P1 单机打通 | 🟡 中心服务栈 ✅、Panda 孪生 + 模拟数据 ✅；**G1 29 自由度：TM、孪生、适配器、真机上行 ✅；Grafana 面板 ⬜** |
+| P1 单机打通 | 🟡 中心服务栈 ✅、Panda 孪生 + 模拟数据 ✅；**G1 29 自由度：TM、孪生、适配器、真机上行 ✅；Grafana 面板 ✅** |
 | P2 Type 复用 | ⬜ Panda、PiperX 的真机适配器；验收标准是核心代码改动 0 行 |
 | P3 PHM 链路 | ⬜ ProgPy/PyOD → 写回 `phm`；Event Frame；Atlas CMMS |
 | P4 核电演示 | ⬜ |
@@ -47,7 +47,7 @@
 - BMS 单位已核实：`cell_vol`、`bmsvoltage` 为 mV，`current` 为 mA（机器人开机时为负），`temperature` 为 °C。
 - `ratedTorque` 暂用 `unitree_rl_gym/.../g1_29dof.urdf` 的 `effort`（峰值力矩上限，不是额定值）；`motor_info.md` 未找到，需要时再替换。
 - 未做：用 `unitree_mujoco` 仿真测试（真机已覆盖验证）；`mainboardstate` 映射到 `controller`（`temperature[0]`≈44 °C 是否为 CPU 温度待确认，因此未映射）；适配器常驻运行（目前只手动跑过 45 秒）。
-- **仍待做：Grafana 增加 G1 温度和电池面板**（P3 的输入）。
+- Grafana 面板 `G1 Thermal & Battery`（`stack/grafana/dashboards/g1-thermal-battery.json`）：SOC/SOH/循环/电压/电流/最热绕组，29 关节绕组与驱动温度，电池电压/单体极值/温度。查询已通过 Grafana API 验证（数据可用、无报错），视觉效果未人工看过。电池 raw 在适配器中拍平为标量字段（`cellVoltageMin/Max`、`temperature0..3`）写入 InfluxDB，因为 raw 通道只支持标量。
 - `provision.sh` 现在对已存在的 Thing 只更新 attributes（否则 PUT 会因 WoT 校验缺少骨架 Feature 而 400）。
 
 ## 6. 阻塞与未验证

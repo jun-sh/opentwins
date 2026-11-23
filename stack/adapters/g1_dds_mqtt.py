@@ -100,6 +100,11 @@ class Adapter:
                   "cellVoltages": [v * BMS_V_SCALE for v in b.cell_vol[:N_CELLS]],
                   "temperatures": [float(t) for t in b.temperature[:N_TEMPS]]}
             feats["battery"] = {"properties": {"status": st}}
+            cv, tp = st["cellVoltages"], st["temperatures"]  # raw is scalar-only: arrays flattened for InfluxDB
+            raw = {"ts": time.time_ns() // 1000, "soc": b.soc, "soh": b.soh, "cycleCount": int(b.cycle),
+                   "voltage": st["voltage"], "current": st["current"], "cellVoltageMin": min(cv), "cellVoltageMax": max(cv)}
+            raw.update({f"temperature{i}": t for i, t in enumerate(tp)})
+            self._pub(f"phm/raw/{self.a.thing}/battery", json.dumps({"samples": [raw]}))
         if mode is not None:
             feats["controller"] = {"properties": {"status": {"mode": f"mode_machine={mode}"}}}
         ns, name = self.a.thing.split(":")
