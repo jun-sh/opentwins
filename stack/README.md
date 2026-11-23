@@ -9,7 +9,7 @@ All components are unmodified upstream images; this directory only holds configu
 | Ditto (policies, things, things-search, connectivity, gateway, ui) + mongodb | eclipse/ditto 3.9.9, mongo 7.0.48 | — | twin state, WoT Type validation |
 | nginx | nginx 1.30.7 | `127.0.0.1:18080` | Ditto API/UI (`/api`, `/ui/`) + Type library (`/models/`) |
 | influxdb | influxdb 2.10.1 | `127.0.0.1:18086` | raw high-rate history (bucket `raw`) |
-| telegraf | telegraf 1.40.3 | — | MQTT → InfluxDB, disk buffer |
+| telegraf | telegraf 1.40.3 | — | MQTT → InfluxDB, memory buffer |
 | grafana | grafana 12.4.9 | `127.0.0.1:13000` | dashboards (folder *PHM*) |
 
 ## Run
@@ -55,7 +55,6 @@ validates every write. Ditto blocks Thing Model downloads from private addresses
 
 ## Known limits (P1)
 
-- Telegraf disk buffer is experimental upstream and not size-capped: watch the `telegraf-buffer` volume.
+- Telegraf uses a memory buffer (3M metrics ≈ 100 s of one G1 at ~30k metrics/s): a longer InfluxDB outage, or a Telegraf restart, loses raw samples. The disk buffer cannot sustain G1 rates (it made Telegraf stall and mosquitto drop ~75% of the raw stream), so do not switch back to it; the `telegraf-buffer` volume is now unused. Size `metric_buffer_limit` up when more robots are added.
 - Panda gripper is not modelled; the Panda adapter is only tested with `--backend fake` (no robot access yet).
-- Telegraf drops most of the raw stream at G1 rates: mosquitto logs "Outgoing messages are being dropped for client telegraf-phm-raw" and Telegraf reconnects (`pingresp not received`) every ~1–2 min; ~20–30% of G1 samples reach InfluxDB. Ditto state is unaffected.
 - MQTT ACLs are configured but not covered by the smoke test (MQTT 3.1.1 silently drops denied publishes).

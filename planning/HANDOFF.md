@@ -49,7 +49,7 @@ G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab
 ### P2 Panda 适配器状态（2026-11-23）
 - `stack/adapters/panda_franka_mqtt.py`（208 行，已登记）：`Robot.read_once()` 循环读 `RobotState`，映射 `q→position`、`dq→velocity`、`tau_J→torque`、`theta→motorPosition`、`tau_ext_hat_filtered→externalTorque`；`faultCode` 位 0 = `joint_collision[i]`、位 1 = `joint_contact[i]`、位 2 = 任一 `current_errors`；`controller.status` 写 `mode`（`kIdle` 等）和 `faultCodes`（激活的错误名）。丢包按 `RobotState.time` 的毫秒跳变统计（每 10 s 打印）。
 - 后端：`pylibfranka`（FR3，系统 ≥ 5，libfranka ≥ 0.16，PyPI 轮子 ≥ 0.20.2；无 `server_version()`，`RobotMode` 名无 k 前缀，`Duration` 只有 `to_sec`）、`panda_py`（Panda 系统 4.x，需对应 libfranka 0.9.x 构建）、`fake`（合成数据，离线测试）。绑定差异已在代码里兼容，依据为两个仓库的 pybind 源码，**未在真机验证**。
-- 离线验证（fake，DGX 本机，注入 0.2% 丢包）：适配器统计 1000 Hz、丢 0.20%；Ditto `panda-001` 7 个关节 + controller 实时更新；InfluxDB 7 个关节都有 `motorPosition` 等字段，但只入库约 30%（见 §6 Telegraf 丢数）。核心代码（TM、`provision.sh`、Telegraf/Ditto 配置）改动 0 行。
+- 离线验证（fake，DGX 本机，注入 0.2% 丢包）：适配器统计 1000 Hz、丢 0.20%；Ditto `panda-001` 7 个关节 + controller 实时更新；InfluxDB 7 个关节都有 `motorPosition` 等字段，当时只入库约 30%（Telegraf 丢数，已于 2026-11-23 修复，见 §6）。核心代码（TM、`provision.sh`、Telegraf/Ditto 配置）改动 0 行。
 - 真机步骤：① Desk（浏览器打开控制柜 IP）Settings→System 读系统版本，激活 FCI；② 4.x → `--backend panda_py`，≥ 5 → `--backend pylibfranka`（`pip install pylibfranka==<与系统匹配的版本>`）；版本不匹配时连接报错会给出 server version；③ `MQTT_EDGE_PASSWORD=... python panda_franka_mqtt.py --backend <b> --robot-ip <ip> --mqtt-host 10.10.60.128 --duration 60`，记录 `[stats]` 的采样率和丢包；④ 仿照 G1 做 systemd 单元。注意 FCI 同时只允许一个客户端。
 
 ### G1 运行状态
@@ -69,8 +69,8 @@ G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab
 
 - G1 主控固件版本：**暂时无法获取，不阻塞开发**。实验室没有宇树 App；`LowState.version` 为 `[0,0]`；loco/audio 服务的 `GetServerApiVersion` 返回错误 3102/3104（高层服务未响应，可能因机器人处于底层调试模式）。已知的版本线索：`mode_machine=5`、BMS 固件 1.3。孪生中 `controller.configuration.firmwareVersion` 暂不填写（它在 TM 中是可选项）。`rt/lf/mainboardstate` 可读（主板温度、电压），映射见 §5 遗留。
 - **Panda 真机访问方式未知**（2026-11-23 用户答复"暂时无法接入"）：需要直连控制柜的主机、SSH 方式、控制柜 IP。待真机读取：Franka 系统版本（Panda 还是 FR3）、PiperX 固件版本（≥ 1.8-8 需用 `C_PiperInterface_V3`）。
-- **Telegraf 丢原始数据（P1 遗留，2026-11-23 发现）**：mosquitto 日志 "Outgoing messages are being dropped for client telegraf-phm-raw"，Telegraf 每 1–2 分钟 `pingresp not received` 重连；G1 每分钟只入库 1–2 万条/关节（应约 6.2 万），即约 20–30%。修复要改 Telegraf/mosquitto 配置（核心代码），应作为独立任务，不算 P2 适配器改动。
-- 未验证：MQTT ACL（smoke test 没覆盖）、Grafana 面板的视觉效果（查询已用 API 验证）、Telegraf 磁盘缓冲的容量上限。
+- **Telegraf 丢原始数据：已修复（2026-11-23）**。根因：Telegraf 磁盘缓冲（实验性 WAL）在 G1 速率（约 3 万点/秒）下写放大严重（容器累计写盘 437 GB），输出跟不上 → `mqtt_consumer` 的未交付消息达到上限（默认 1000）后停止读取 → paho 收不到 PINGRESP 断线重连、mosquitto 丢弃发往 telegraf 的消息。修复（只改 `stack/telegraf/telegraf.conf`，mosquitto 未改）：`buffer_strategy = "memory"`、`metric_buffer_limit = 3000000`（约 100 s 的 G1 数据）、`max_undelivered_messages = 10000`。验证：G1 当时离线，用同速率合成负载（29 关节 × 1040 Hz、200 ms 批）跑 5 分钟，入库 9,048,000/9,048,000（100%），Telegraf 零重连、mosquitto 无 dropped；测试数据已删除。代价：InfluxDB 停机超过约 100 s 或 Telegraf 重启会丢原始数据；接入更多机器人时要调大 `metric_buffer_limit`。G1 真机恢复后应复核每关节每分钟约 6.2 万条。
+- 未验证：MQTT ACL（smoke test 没覆盖）、Grafana 面板的视觉效果（查询已用 API 验证）、Telegraf 内存缓冲在 InfluxDB 长时间停机下的行为。
 - 许可证：Grafana 和 Atlas CMMS 为 AGPL，ProgPy 为 NOSA，交付核电前需要法务意见。
 
 ## 7. 常用命令（在 `stack/` 下执行）
