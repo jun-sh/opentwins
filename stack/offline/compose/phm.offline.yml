@@ -1,0 +1,6 @@
+# Offline overlay for stack/phm/docker-compose.yml: use the bundle's image (built from hash-locked wheels).
+#   docker-compose -p phm-analytics --env-file ../.env -f docker-compose.yml -f ../offline/compose/phm.offline.yml up -d --no-build
+services:
+  phm-worker:
+    image: phm-worker:0.1-offline
+    pull_policy: never

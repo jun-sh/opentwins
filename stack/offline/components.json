@@ -1,0 +1,17 @@
+{
+  "_comment": "Curated licences of the top-level products (from each upstream LICENSE/COPYING file and project site). SBOM scanners often cannot see these for Go binaries and fat jars. Review when a version changes.",
+  "components": [
+    {"name": "Eclipse Ditto 3.9.9", "where": "eclipse/ditto-*:3.9.9", "licence": "EPL-2.0", "class": "weak-copyleft", "osi": "yes"},
+    {"name": "MongoDB Community Server 7.0", "where": "library/mongo:7.0.48", "licence": "SSPL-1.0", "class": "non-osi/special", "osi": "no", "note": "**FLAG** source-available, not OSI; section 13 targets offering it as a service. Used only as Ditto's store. Legal review"},
+    {"name": "Eclipse Mosquitto 2.1", "where": "library/eclipse-mosquitto:2.1.4-alpine", "licence": "EPL-2.0 OR EDL-1.0 (BSD-3-Clause)", "class": "permissive (EDL option)", "osi": "yes"},
+    {"name": "nginx 1.30", "where": "library/nginx:1.30.7-alpine", "licence": "BSD-2-Clause", "class": "permissive", "osi": "yes"},
+    {"name": "InfluxDB OSS 2.10", "where": "library/influxdb:2.10.1-alpine", "licence": "MIT", "class": "permissive", "osi": "yes"},
+    {"name": "Telegraf 1.40", "where": "library/telegraf:1.40.3-alpine (+ phm-plant/telegraf-opcua)", "licence": "MIT", "class": "permissive", "osi": "yes"},
+    {"name": "Grafana OSS 12.4", "where": "grafana/grafana:12.4.9", "licence": "AGPL-3.0-only", "class": "network-copyleft", "osi": "yes", "note": "**FLAG** AGPL (known, legal review pending). Used unmodified"},
+    {"name": "Python 3.11 + Debian 12 base", "where": "library/python:3.11-slim-bookworm", "licence": "PSF-2.0; Debian packages mixed (GPL/LGPL/BSD/MIT)", "class": "mixed", "osi": "yes", "note": "GPL system packages are unmodified OS components"},
+    {"name": "ProgPy 1.9.0", "where": "phm-worker (pip progpy)", "licence": "NASA-1.3 (NOSA)", "class": "non-osi/special", "osi": "yes (OSI) / not FSF-free", "note": "**FLAG** NOSA (known, legal review pending): redistribution and modification terms differ from common OSS"},
+    {"name": "PyOD 3.6.9", "where": "phm-worker (pip pyod)", "licence": "BSD-2-Clause", "class": "permissive", "osi": "yes"},
+    {"name": "asyncua (opcua-asyncio) 1.1.8", "where": "phm-plant/pump-sim (pip asyncua)", "licence": "LGPL-3.0-or-later", "class": "weak-copyleft", "osi": "yes", "note": "simulator only; not in the twin path"},
+    {"name": "Atlas CMMS", "where": "not deployed", "licence": "AGPL-3.0", "class": "network-copyleft", "osi": "yes", "note": "**FLAG** evaluated only (P3); not in the bundle"}
+  ]
+}
