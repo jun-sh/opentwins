@@ -1,0 +1,10 @@
+{
+  "policyId": "lab.robots:piperx-001",
+  "definition": "http://phm-models/models/asset/arm-agilex-piperx-1.0.0.tm.jsonld",
+  "attributes": {
+    "vendor": "AgileX Robotics",
+    "model": "PiPER X",
+    "kinematicModelUri": "https://github.com/google-deepmind/mujoco_menagerie/tree/main/agilex_piper",
+    "isa95Path": "lab/cell-1/piperx-001"
+  }
+}

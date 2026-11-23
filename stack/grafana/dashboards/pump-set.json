@@ -1,0 +1,685 @@
+{
+ "uid": "phm-pump-set",
+ "title": "Pump Set (OPC UA, P4)",
+ "tags": [
+  "phm",
+  "p4",
+  "opcua"
+ ],
+ "timezone": "browser",
+ "schemaVersion": 39,
+ "refresh": "10s",
+ "time": {
+  "from": "now-3h",
+  "to": "now"
+ },
+ "description": "plant.sim:pump-set-01 from the OPC UA simulator via Telegraf. Slow DE-bearing wear raises vibration, bearing temperature and current; alarm word bits: 0 VibrationHigh, 1 VibrationTrip, 2 BearingTempHigh, 3 WindingTempHigh, 4 FlowLow, 5 MotorOvercurrent.",
+ "templating": {
+  "list": [
+   {
+    "name": "thing_id",
+    "label": "Asset",
+    "type": "query",
+    "datasource": {
+     "type": "influxdb",
+     "uid": "influxdb-phm"
+    },
+    "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"raw\", tag: \"thing_id\", predicate: (r) => r.feature_id == \"bearing_de\", start: -30d)",
+    "refresh": 2,
+    "multi": false,
+    "includeAll": false
+   }
+  ]
+ },
+ "panels": [
+  {
+   "id": 1,
+   "type": "stat",
+   "title": "Speed",
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "influxdb",
+    "uid": "influxdb-phm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "rotrpm"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.thing_id == \"${thing_id}\" and (r.feature_id == \"motor\") and (r._field == \"velocity\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 60.0 / (2.0 * 3.141592653589793)}))\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, series: r.feature_id + \".\" + r._field}))\n  |> group(columns: [\"series\"])"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background"
+   }
+  },
+  {
+   "id": 2,
+   "type": "stat",
+   "title": "Stator current",
+   "gridPos": {
+    "x": 4,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "influxdb",
+    "uid": "influxdb-phm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "amp",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 63.25,
+        "color": "red"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.thing_id == \"${thing_id}\" and (r.feature_id == \"motor\") and (r._field == \"current\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, series: r.feature_id + \".\" + r._field}))\n  |> group(columns: [\"series\"])"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background"
+   }
+  },
+  {
+   "id": 3,
+   "type": "stat",
+   "title": "Flow",
+   "gridPos": {
+    "x": 8,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "influxdb",
+    "uid": "influxdb-phm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "suffix: m\u00b3/h",
+     "decimals": 1
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.thing_id == \"${thing_id}\" and (r.feature_id == \"pump\") and (r._field == \"flow\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 3600.0}))\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, series: r.feature_id + \".\" + r._field}))\n  |> group(columns: [\"series\"])"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background"
+   }
+  },
+  {
+   "id": 4,
+   "type": "stat",
+   "title": "DE bearing vibration",
+   "gridPos": {
+    "x": 12,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "influxdb",
+    "uid": "influxdb-phm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "velocitymms",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 4.5,
+        "color": "yellow"
+       },
+       {
+        "value": 7.1,
+        "color": "orange"
+       },
+       {
+        "value": 11.2,
+        "color": "red"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.thing_id == \"${thing_id}\" and (r.feature_id == \"bearing_de\") and (r._field == \"vibrationRms\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, series: r.feature_id + \".\" + r._field}))\n  |> group(columns: [\"series\"])"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background"
+   }
+  },
+  {
+   "id": 5,
+   "type": "stat",
+   "title": "DE bearing temperature",
+   "gridPos": {
+    "x": 16,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "influxdb",
+    "uid": "influxdb-phm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "celsius",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 70,
+        "color": "yellow"
+       },
+       {
+        "value": 85,
+        "color": "red"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.thing_id == \"${thing_id}\" and (r.feature_id == \"bearing_de\") and (r._field == \"temperature\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, series: r.feature_id + \".\" + r._field}))\n  |> group(columns: [\"series\"])"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background"
+   }
+  },
+  {
+   "id": 6,
+   "type": "stat",
+   "title": "Alarm word (motor.faultCode)",
+   "gridPos": {
+    "x": 20,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "datasource": {
+    "type": "influxdb",
+    "uid": "influxdb-phm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "0": {
+         "text": "No alarm",
+         "color": "green"
+        }
+       }
+      },
+      {
+       "type": "range",
+       "options": {
+        "from": 1,
+        "to": 1000000000.0,
+        "result": {
+         "text": "ALARM",
+         "color": "red"
+        }
+       }
+      }
+     ],
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.thing_id == \"${thing_id}\" and (r.feature_id == \"motor\") and (r._field == \"faultCode\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, series: r.feature_id + \".\" + r._field}))\n  |> group(columns: [\"series\"])"
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background",
+    "textMode": "value_and_name"
+   }
+  },
+  {
+   "id": 7,
+   "type": "timeseries",
+   "title": "Bearing vibration RMS (ISO 10816-3: 7.1 alarm, 11.2 trip)",
+   "gridPos": {
+    "x": 0,
+    "y": 4,
+    "w": 12,
+    "h": 9
+   },
+   "datasource": {
+    "type": "influxdb",
+    "uid": "influxdb-phm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "velocitymms",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 7.1,
+        "color": "orange"
+       },
+       {
+        "value": 11.2,
+        "color": "red"
+       }
+      ]
+     },
+     "custom": {
+      "thresholdsStyle": {
+       "mode": "line+area"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.thing_id == \"${thing_id}\" and (r.feature_id == \"bearing_de\" or r.feature_id == \"bearing_nde\") and (r._field == \"vibrationRms\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, series: r.feature_id + \".\" + r._field}))\n  |> group(columns: [\"series\"])"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "table",
+     "calcs": [
+      "lastNotNull",
+      "min",
+      "max"
+     ]
+    }
+   }
+  },
+  {
+   "id": 8,
+   "type": "timeseries",
+   "title": "Bearing temperature",
+   "gridPos": {
+    "x": 12,
+    "y": 4,
+    "w": 12,
+    "h": 9
+   },
+   "datasource": {
+    "type": "influxdb",
+    "uid": "influxdb-phm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "celsius",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 85,
+        "color": "red"
+       }
+      ]
+     },
+     "custom": {
+      "thresholdsStyle": {
+       "mode": "line+area"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.thing_id == \"${thing_id}\" and (r.feature_id == \"bearing_de\" or r.feature_id == \"bearing_nde\") and (r._field == \"temperature\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, series: r.feature_id + \".\" + r._field}))\n  |> group(columns: [\"series\"])"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "table",
+     "calcs": [
+      "lastNotNull",
+      "min",
+      "max"
+     ]
+    }
+   }
+  },
+  {
+   "id": 9,
+   "type": "timeseries",
+   "title": "Bearing vibration peak",
+   "gridPos": {
+    "x": 0,
+    "y": 13,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "influxdb",
+    "uid": "influxdb-phm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "velocitymms"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.thing_id == \"${thing_id}\" and (r.feature_id == \"bearing_de\" or r.feature_id == \"bearing_nde\") and (r._field == \"vibrationPeak\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, series: r.feature_id + \".\" + r._field}))\n  |> group(columns: [\"series\"])"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "table",
+     "calcs": [
+      "lastNotNull",
+      "min",
+      "max"
+     ]
+    }
+   }
+  },
+  {
+   "id": 10,
+   "type": "timeseries",
+   "title": "Motor: stator current",
+   "gridPos": {
+    "x": 12,
+    "y": 13,
+    "w": 6,
+    "h": 8
+   },
+   "datasource": {
+    "type": "influxdb",
+    "uid": "influxdb-phm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "amp"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.thing_id == \"${thing_id}\" and (r.feature_id == \"motor\") and (r._field == \"current\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, series: r.feature_id + \".\" + r._field}))\n  |> group(columns: [\"series\"])"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "table",
+     "calcs": [
+      "lastNotNull",
+      "min",
+      "max"
+     ]
+    }
+   }
+  },
+  {
+   "id": 11,
+   "type": "timeseries",
+   "title": "Motor: winding temperature",
+   "gridPos": {
+    "x": 18,
+    "y": 13,
+    "w": 6,
+    "h": 8
+   },
+   "datasource": {
+    "type": "influxdb",
+    "uid": "influxdb-phm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "celsius",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 130,
+        "color": "red"
+       }
+      ]
+     },
+     "custom": {
+      "thresholdsStyle": {
+       "mode": "line+area"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.thing_id == \"${thing_id}\" and (r.feature_id == \"motor\") and (r._field == \"windingTemperature\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, series: r.feature_id + \".\" + r._field}))\n  |> group(columns: [\"series\"])"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "table",
+     "calcs": [
+      "lastNotNull",
+      "min",
+      "max"
+     ]
+    }
+   }
+  },
+  {
+   "id": 12,
+   "type": "timeseries",
+   "title": "Pump: suction / discharge pressure",
+   "gridPos": {
+    "x": 0,
+    "y": 21,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "influxdb",
+    "uid": "influxdb-phm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "kpa"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.thing_id == \"${thing_id}\" and (r.feature_id == \"pump\") and (r._field == \"suctionPressure\" or r._field == \"dischargePressure\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, series: r.feature_id + \".\" + r._field}))\n  |> group(columns: [\"series\"])"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "table",
+     "calcs": [
+      "lastNotNull",
+      "min",
+      "max"
+     ]
+    }
+   }
+  },
+  {
+   "id": 13,
+   "type": "timeseries",
+   "title": "Pump: flow",
+   "gridPos": {
+    "x": 12,
+    "y": 21,
+    "w": 6,
+    "h": 8
+   },
+   "datasource": {
+    "type": "influxdb",
+    "uid": "influxdb-phm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "suffix: m\u00b3/h"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.thing_id == \"${thing_id}\" and (r.feature_id == \"pump\") and (r._field == \"flow\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 3600.0}))\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, series: r.feature_id + \".\" + r._field}))\n  |> group(columns: [\"series\"])"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "table",
+     "calcs": [
+      "lastNotNull",
+      "min",
+      "max"
+     ]
+    }
+   }
+  },
+  {
+   "id": 14,
+   "type": "timeseries",
+   "title": "Motor: speed",
+   "gridPos": {
+    "x": 18,
+    "y": 21,
+    "w": 6,
+    "h": 8
+   },
+   "datasource": {
+    "type": "influxdb",
+    "uid": "influxdb-phm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "rotrpm"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.thing_id == \"${thing_id}\" and (r.feature_id == \"motor\") and (r._field == \"velocity\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 60.0 / (2.0 * 3.141592653589793)}))\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, series: r.feature_id + \".\" + r._field}))\n  |> group(columns: [\"series\"])"
+    }
+   ],
+   "options": {
+    "legend": {
+     "showLegend": true,
+     "displayMode": "table",
+     "calcs": [
+      "lastNotNull",
+      "min",
+      "max"
+     ]
+    }
+   }
+  }
+ ]
+}

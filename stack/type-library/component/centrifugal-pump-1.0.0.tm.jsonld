@@ -1,0 +1,33 @@
+{
+  "@context": [
+    "https://www.w3.org/2022/wot/td/v1.1",
+    { "ditto": "https://ditto.eclipseprojects.io/wot/ditto-extension#" }
+  ],
+  "@type": "tm:ThingModel",
+  "title": "Centrifugal Pump",
+  "description": "Hydraulic end of a pump set: flow and pressures. Driver (rotating-actuator) and bearings are separate components.",
+  "version": { "model": "1.0.0" },
+  "links": [
+    {
+      "rel": "tm:extends",
+      "href": "http://phm-models/models/base/monitored-component-1.0.0.tm.jsonld",
+      "type": "application/tm+json"
+    }
+  ],
+  "tm:optional": [
+    "/properties/lastAssessedAt",
+    "/properties/modelRef",
+    "/events/conditionChanged",
+    "/properties/suctionPressure",
+    "/properties/dischargePressure",
+    "/properties/ratedFlow",
+    "/properties/ratedHead"
+  ],
+  "properties": {
+    "flow":              { "title": "Volumetric flow", "type": "number", "unit": "m3/s", "ditto:category": "status" },
+    "suctionPressure":   { "title": "Suction pressure (absolute)", "type": "number", "unit": "kPa", "ditto:category": "status" },
+    "dischargePressure": { "title": "Discharge pressure (absolute)", "type": "number", "unit": "kPa", "ditto:category": "status" },
+    "ratedFlow":         { "title": "Rated flow (duty point)", "type": "number", "unit": "m3/s", "ditto:category": "configuration" },
+    "ratedHead":         { "title": "Rated head (duty point)", "type": "number", "unit": "m", "ditto:category": "configuration" }
+  }
+}

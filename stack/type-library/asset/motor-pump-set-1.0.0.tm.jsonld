@@ -1,0 +1,46 @@
+{
+  "@context": [
+    "https://www.w3.org/2022/wot/td/v1.1",
+    {
+      "ditto": "https://ditto.eclipseprojects.io/wot/ditto-extension#"
+    }
+  ],
+  "@type": "tm:ThingModel",
+  "title": "Motor-Pump Set",
+  "description": "Electric motor driving a centrifugal pump on drive-end/non-drive-end rolling bearings, plus the local controller (mode, alarm points). Reuses rotating-actuator and controller; bearing and centrifugal-pump are the P4 component additions.",
+  "version": {
+    "model": "1.0.0"
+  },
+  "links": [
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "motor"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/bearing-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "bearing_de"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/bearing-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "bearing_nde"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/centrifugal-pump-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "pump"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/controller-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "controller"
+    }
+  ]
+}
