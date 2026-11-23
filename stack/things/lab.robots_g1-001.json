@@ -1,0 +1,215 @@
+{
+  "policyId": "lab.robots:g1-001",
+  "definition": "http://phm-models/models/asset/humanoid-unitree-g1-29dof-1.0.0.tm.jsonld",
+  "attributes": {
+    "vendor": "Unitree Robotics",
+    "model": "G1 (29 DoF)",
+    "kinematicModelUri": "https://github.com/google-deepmind/mujoco_menagerie/tree/main/unitree_g1",
+    "isa95Path": "lab/cell-1/g1-001"
+  },
+  "features": {
+    "left_hip_pitch_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 88
+        }
+      }
+    },
+    "left_hip_roll_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 88
+        }
+      }
+    },
+    "left_hip_yaw_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 88
+        }
+      }
+    },
+    "left_knee_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 139
+        }
+      }
+    },
+    "left_ankle_pitch_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 50
+        }
+      }
+    },
+    "left_ankle_roll_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 50
+        }
+      }
+    },
+    "right_hip_pitch_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 88
+        }
+      }
+    },
+    "right_hip_roll_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 88
+        }
+      }
+    },
+    "right_hip_yaw_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 88
+        }
+      }
+    },
+    "right_knee_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 139
+        }
+      }
+    },
+    "right_ankle_pitch_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 50
+        }
+      }
+    },
+    "right_ankle_roll_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 50
+        }
+      }
+    },
+    "waist_yaw_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 88
+        }
+      }
+    },
+    "waist_roll_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 50
+        }
+      }
+    },
+    "waist_pitch_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 50
+        }
+      }
+    },
+    "left_shoulder_pitch_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 25
+        }
+      }
+    },
+    "left_shoulder_roll_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 25
+        }
+      }
+    },
+    "left_shoulder_yaw_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 25
+        }
+      }
+    },
+    "left_elbow_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 25
+        }
+      }
+    },
+    "left_wrist_roll_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 25
+        }
+      }
+    },
+    "left_wrist_pitch_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 5
+        }
+      }
+    },
+    "left_wrist_yaw_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 5
+        }
+      }
+    },
+    "right_shoulder_pitch_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 25
+        }
+      }
+    },
+    "right_shoulder_roll_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 25
+        }
+      }
+    },
+    "right_shoulder_yaw_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 25
+        }
+      }
+    },
+    "right_elbow_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 25
+        }
+      }
+    },
+    "right_wrist_roll_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 25
+        }
+      }
+    },
+    "right_wrist_pitch_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 5
+        }
+      }
+    },
+    "right_wrist_yaw_joint": {
+      "properties": {
+        "configuration": {
+          "ratedTorque": 5
+        }
+      }
+    }
+  }
+}

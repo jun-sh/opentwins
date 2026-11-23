@@ -1,0 +1,231 @@
+{
+  "@context": [
+    "https://www.w3.org/2022/wot/td/v1.1",
+    {
+      "ditto": "https://ditto.eclipseprojects.io/wot/ditto-extension#"
+    }
+  ],
+  "@type": "tm:ThingModel",
+  "title": "Unitree G1 (29 DoF)",
+  "description": "29-DoF humanoid. Feature IDs and order follow MuJoCo Menagerie unitree_g1 joint names = DDS motor index 0-28.",
+  "version": {
+    "model": "1.0.0"
+  },
+  "links": [
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "left_hip_pitch_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "left_hip_roll_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "left_hip_yaw_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "left_knee_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "left_ankle_pitch_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "left_ankle_roll_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "right_hip_pitch_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "right_hip_roll_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "right_hip_yaw_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "right_knee_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "right_ankle_pitch_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "right_ankle_roll_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "waist_yaw_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "waist_roll_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "waist_pitch_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "left_shoulder_pitch_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "left_shoulder_roll_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "left_shoulder_yaw_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "left_elbow_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "left_wrist_roll_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "left_wrist_pitch_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "left_wrist_yaw_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "right_shoulder_pitch_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "right_shoulder_roll_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "right_shoulder_yaw_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "right_elbow_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "right_wrist_roll_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "right_wrist_pitch_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "right_wrist_yaw_joint"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/battery-pack-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "battery"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/controller-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "controller"
+    }
+  ],
+  "tm:optional": [
+    "/properties/serialNumber",
+    "/properties/parentId"
+  ],
+  "properties": {
+    "vendor": {
+      "type": "string",
+      "default": "Unitree Robotics"
+    },
+    "model": {
+      "type": "string",
+      "default": "G1"
+    },
+    "serialNumber": {
+      "type": "string"
+    },
+    "kinematicModelUri": {
+      "type": "string",
+      "default": "https://github.com/google-deepmind/mujoco_menagerie/tree/main/unitree_g1"
+    },
+    "parentId": {
+      "type": "string",
+      "description": "Thing ID of the parent asset-group (ISA-95 hierarchy)."
+    },
+    "isa95Path": {
+      "type": "string",
+      "description": "Slash-separated ISA-95 path, e.g. lab/cell-1/g1-001."
+    }
+  }
+}

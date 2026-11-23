@@ -31,5 +31,10 @@ echo "things:"
 for f in things/*_*.json; do
   name=$(basename "$f" .json); id="${name/_/:}"
   envsubst '${DITTO_USER}' < things/policy-robot.json | put "$BASE/api/2/policies/$id" "$DITTO_USER:$DITTO_USER_PASSWORD" -
-  put "$BASE/api/2/things/$id"   "$DITTO_USER:$DITTO_USER_PASSWORD" "$f"
+  # PUT would replace the Thing and fail WoT validation (skeleton features missing) on re-run, so update attributes only if it exists.
+  if curl -fs -o /dev/null -u "$DITTO_USER:$DITTO_USER_PASSWORD" "$BASE/api/2/things/$id"; then
+    jq .attributes "$f" | put "$BASE/api/2/things/$id/attributes" "$DITTO_USER:$DITTO_USER_PASSWORD" -
+  else
+    put "$BASE/api/2/things/$id" "$DITTO_USER:$DITTO_USER_PASSWORD" "$f"
+  fi
 done
