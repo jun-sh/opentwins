@@ -60,33 +60,16 @@ validates every write. Ditto blocks Thing Model downloads from private addresses
 | `phm/Dockerfile`, `phm/docker-compose.yml` | 34 | worker image and its own compose project `phm-analytics` (config, not code) |
 | `adapters/panda_franka_mqtt.py` | 208 | Franka Panda/FR3 libfranka `RobotState` (`read_once()` loop, ~1 kHz) → MQTT; read-only, never commands motion. `--backend pylibfranka` (FR3, system ≥ 5), `panda_py` (Panda, system 4.x), `fake` (offline test). `python panda_franka_mqtt.py --backend <b> --robot-ip <FCI ip> --mqtt-host <DGX>`; needs `MQTT_EDGE_PASSWORD`. Not yet run on the real robot |
 | `adapters/piperx_can_mqtt.py` | 204 | AgileX PiPER / PiPER X `piper_sdk` (SocketCAN) feedback → MQTT; read-only, never sends enable/mode/motion frames. `--backend sdk --sdk-version V3` (firmware ≥ 1.8-8; else V2) or `fake`. `python piperx_can_mqtt.py --can can0 --mqtt-host <DGX>`; needs `MQTT_EDGE_PASSWORD`. Not yet run on the real arm |
-| `plant-sim/pump_set_opcua_sim.py` | 190 | P4: asyncua (FreeOpcUa) OPC UA server simulating a motor-pump set with injectable DE-bearing wear; stands in for a plant PLC/DCS. Not part of the twin path |
-| `plant-sim/telegraf-opcua.conf` | 206 | P4: OPC UA → edge contract with Telegraf `inputs.opcua` + `outputs.mqtt` (JSONata payloads); config, not code. This is the whole OPC UA "adapter" |
-| `plant-sim/docker-compose.yml`, `Dockerfile.*` | 40 | P4: separate compose project `phm-plant` on network `phm_default`; configs baked into images |
 | `offline/bundle.sh` | 201 | P5: `lock` pins images by registry digest + Python artifacts by sha256; `build` vendors wheels, builds custom images with `--network none`, `docker save`s, runs SBOM, writes versioned tarball + `SHA256SUMS` |
-| `offline/install.sh` | 100 | P5: air-gapped install from an extracted bundle (checksums, `docker load`, image-ID check, init-env, 3 projects up with offline overlays, health wait, provision, smoke test; `--rebuild` rebuilds custom images offline) |
+| `offline/install.sh` | 100 | P5: air-gapped install from an extracted bundle (checksums, `docker load`, image-ID check, init-env, 2 projects up with offline overlays, health wait, provision, smoke test; `--rebuild` rebuilds custom images offline) |
 | `offline/sbom.sh` | 48 | P5: Syft CycloneDX SBOM per image (+ Python-only SBOM for custom images), Grype vulnerability JSON + summary |
 | `offline/licence_summary.py` | 133 | P5: licence classes from the SBOMs + curated `components.json`; flags AGPL/SSPL/NOSA/non-OSI/unknown |
-| `offline/test/offline-proof.sh`, `Dockerfile.harness` | 51 | P5 test only: installs a bundle in a throwaway Docker-in-Docker with `--network none` and checks health, smoke test, P4 data |
-| `offline/docker/*.Dockerfile`, `offline/compose/*.offline.yml` | 62 | P5 config: offline twins of `phm/Dockerfile` and `plant-sim/Dockerfile.sim` (wheels only, `--require-hashes`; keep in sync) and `pull_policy: never` overlays |
-
-## P4 plant simulation (OPC UA pump set)
-
-```bash
-cd plant-sim && docker-compose -p phm-plant --env-file ../.env up -d --build   # own project; core stack untouched
-```
-
-- `pump-sim`: OPC UA server `opc.tcp://<host>:14840/plant-sim/` (bound to `PHM_BIND`), namespace `urn:opentwins:plant-sim`,
-  nodes `PumpSet01.{Motor,BearingDE,BearingNDE,Pump,Controller,Alarms,Sim}.*`, security None (lab only).
-- Degradation: `PumpSet01.Sim.BearingWear` (0–1, writable) grows at `Sim.BearingWearRate` (default 0.5 per hour,
-  env `SIM_BEARING_WEAR_RATE`; `SIM_TIME_SCALE` speeds up simulated time); at 1 the bearing is "replaced" (`Sim.AutoReplace`).
-  Write `BearingWear` from any OPC UA client to inject a fault; alarm bits go to `motor.faultCode`, names to `controller.faultCodes`.
-- `telegraf-opcua`: 10 Hz raw → `phm/raw/plant.sim:pump-set-01/<feature>`, 1 Hz state → `phm/state/...` (as user `edge`).
-- Twin: `things/plant.sim_pump-set-01.json` (asset TM `motor-pump-set`); Grafana dashboard *Pump Set (OPC UA, P4)*.
+| `offline/test/offline-proof.sh`, `Dockerfile.harness` | 51 | P5 test only: installs a bundle in a throwaway Docker-in-Docker with `--network none` and checks health and smoke test |
+| `offline/docker/*.Dockerfile`, `offline/compose/*.offline.yml` | 62 | P5 config: offline twin of `phm/Dockerfile` (wheels only, `--require-hashes`; keep in sync) and `pull_policy: never` overlays |
 
 ## P5 offline deployment and SBOM (`offline/`)
 
-Air-gapped install of all three compose projects. Default compose files are unchanged and still work online;
+Air-gapped install of both compose projects (core `phm`, `phm-analytics`). Default compose files are unchanged and still work online;
 offline runs add the overlays in `offline/compose/` (`pull_policy: never`, bundle image tags, `--no-build`).
 
 ```bash
@@ -104,11 +87,11 @@ offline/test/offline-proof.sh offline/dist/opentwins-phm-offline-*.tar --rebuild
   digest (taken from the local images, i.e. what the DGX runs). `build` refuses a local tag whose image differs
   from the lock and never retags it. The bundle records image IDs; `install.sh` checks every loaded ID.
 - Python: `offline/python/<image>.lock.txt` lists every PyPI artifact with sha256 (x86_64, cp311). `build`
-  downloads with `--require-hashes`, turns the two sdist-only packages (`fastdtw`, `wait_for2`) into wheels
+  downloads with `--require-hashes`, turns the sdist-only package (`fastdtw`) into a wheel
   (their build backends come from PyPI at bundle time; sdists ship in `python/sdist/` for audit), writes a
-  wheel lock, and builds `phm-worker:0.1-offline` / `phm-plant/pump-sim:0.1.0-offline` with
+  wheel lock, and builds `phm-worker:0.1-offline` with
   `docker build --network none` from `offline/docker/*.Dockerfile` (keep in sync with the online Dockerfiles).
-- Bundle layout: `images/images.tar.gz` (16 images, `docker save`), `images/images.ids`, `python/` (wheels, locks,
+- Bundle layout: `images/images.tar.gz` (`docker save` of every image), `images/images.ids`, `python/` (wheels, locks,
   sdists), `stack.tar` (`git archive HEAD stack`), `sbom/`, `bundle.json`, `install.sh`, `SHA256SUMS`.
 - SBOM (Syft v1.56.0, CycloneDX JSON) and vulnerabilities (Grype v0.121.1), both pinned by digest; inside the bundle
   in `sbom/` and copied to the repo in `offline/sbom/`: `cyclonedx.tar.gz` (per-image and Python-only SBOMs),

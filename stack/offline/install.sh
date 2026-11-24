@@ -2,10 +2,10 @@
 # P5 air-gapped install: run from the extracted bundle directory (no registry or PyPI access needed).
 #   ./install.sh [--target DIR] [--env KEY=VALUE]... [--rebuild] [--no-smoke]
 # 1 verify SHA256SUMS  2 docker load + check every image ID against the bundle  3 unpack stack/ into DIR
-# 4 init-env (only if DIR/stack/.env is missing; --env overrides e.g. ports)  5 up core, phm-analytics,
-# phm-plant with the offline overlays (pull_policy: never, --no-build)  6 wait for Ditto, InfluxDB,
+# 4 init-env (only if DIR/stack/.env is missing; --env overrides e.g. ports)  5 up core and phm-analytics
+# with the offline overlays (pull_policy: never, --no-build)  6 wait for Ditto, InfluxDB,
 # Grafana  7 provision.sh  8 smoke-test.sh.
-# --rebuild: rebuild the three custom images from the vendored wheels with `docker build --network none`
+# --rebuild: rebuild the custom PHM worker image from the vendored wheels with `docker build --network none`
 # instead of using the prebuilt ones (proves the source -> image path works offline).
 set -euo pipefail
 B=$(cd "$(dirname "$0")" && pwd)
@@ -42,19 +42,15 @@ if [ "$REBUILD" = 1 ]; then
   log "    rebuilding custom images offline from vendored wheels"
   base=$(awk '$1 ~ /library\/python:/ {print $1}' "$B/images/images.ids")
   ctx=$(mktemp -d)
-  for img in phm-worker pump-sim; do
+  for img in phm-worker; do
     rm -rf "$ctx/$img"; mkdir -p "$ctx/$img"
     cp -r "$B/python/wheels-$img" "$ctx/$img/wheels"
     cp "$B/python/$img.wheels.lock.txt" "$ctx/$img/requirements.lock.txt"
   done
   cp phm/phm_worker.py phm/thermal_model.py "$ctx/phm-worker/"
-  cp plant-sim/pump_set_opcua_sim.py "$ctx/pump-sim/"
   tag() { awk -v n="$1" '$1 ~ n {print $1}' "$B/images/images.ids"; }
   docker build -q --network none --build-arg "BASE=$base" -f offline/docker/phm-worker.Dockerfile \
     -t "$(tag '^phm-worker:')" "$ctx/phm-worker" >/dev/null
-  docker build -q --network none --build-arg "BASE=$base" -f offline/docker/pump-sim.Dockerfile \
-    -t "$(tag '/pump-sim:')" "$ctx/pump-sim" >/dev/null
-  docker build -q --network none -f plant-sim/Dockerfile.telegraf -t "$(tag '/telegraf-opcua:')" plant-sim >/dev/null
   rm -rf "$ctx"
 fi
 
@@ -74,8 +70,6 @@ log "5/8 starting compose projects (offline overlays)"
 $DC -f docker-compose.yml -f offline/compose/core.offline.yml up -d --no-build
 (cd phm && $DC -p phm-analytics --env-file ../.env -f docker-compose.yml \
    -f ../offline/compose/phm.offline.yml up -d --no-build)
-(cd plant-sim && $DC -p phm-plant --env-file ../.env -f docker-compose.yml \
-   -f ../offline/compose/plant-sim.offline.yml up -d --no-build)
 
 log "6/8 waiting for services"
 wait_http() { # wait_http <name> <url> <seconds>

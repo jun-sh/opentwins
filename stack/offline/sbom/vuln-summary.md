@@ -18,6 +18,4 @@ Scanner: `docker.io/anchore/grype:v0.121.1`, vulnerability DB built 2026-11-23T0
 | `docker.io/library/nginx:1.30.7-alpine` | 1 | 19 | 9 | 0 | 0 | 10 |
 | `docker.io/library/python:3.11-slim-bookworm` | 4 | 99 | 162 | 29 | 111 | 7 |
 | `docker.io/library/telegraf:1.40.3-alpine` | 1 | 22 | 13 | 0 | 1 | 2 |
-| `phm-plant/pump-sim:0.1.0-offline` | 4 | 99 | 162 | 29 | 111 | 7 |
 | `phm-worker:0.1-offline` | 4 | 99 | 163 | 29 | 111 | 7 |
-| `phm-plant/telegraf-opcua:0.1.0-offline` | 1 | 22 | 13 | 0 | 1 | 2 |

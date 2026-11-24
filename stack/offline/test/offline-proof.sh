@@ -37,8 +37,5 @@ x bash -c 'set -e; cd /work/opentwins/stack; set -a; . ./.env; set +a
   echo "Ditto:    $(curl -fs http://127.0.0.1:$PHM_HTTP_PORT/health | jq -c "{status}")"
   docker ps -q | xargs docker inspect -f "{{.Name}}\t{{.Config.Image}}\t{{.State.Status}} restarts={{.RestartCount}} health={{if .State.Health}}{{.State.Health.Status}}{{end}}" | sort
   sleep 20
-  v=$(curl -fs -u "$DITTO_USER:$DITTO_USER_PASSWORD" "http://127.0.0.1:$PHM_HTTP_PORT/api/2/things/plant.sim:pump-set-01/features/motor/properties/status/velocity")
-  echo "P4 pump-set-01 motor.status.velocity (OPC UA sim -> Telegraf -> MQTT -> Ditto): $v"
-  [ -n "$v" ] && [ "$v" != null ]
   echo "phm-worker log tail:"; docker logs --tail 5 phm-analytics-phm-worker-1 2>&1'
 log "PASS: offline install healthy in isolation"

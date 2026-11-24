@@ -1,9 +1,0 @@
-# Offline overlay for stack/plant-sim/docker-compose.yml: use the bundle's images.
-#   docker-compose -p phm-plant --env-file ../.env -f docker-compose.yml -f ../offline/compose/plant-sim.offline.yml up -d --no-build
-services:
-  pump-sim:
-    image: phm-plant/pump-sim:0.1.0-offline
-    pull_policy: never
-  telegraf-opcua:
-    image: phm-plant/telegraf-opcua:0.1.0-offline
-    pull_policy: never
