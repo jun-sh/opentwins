@@ -8,11 +8,11 @@
 |---|---|---|
 | 1 | OpenTwins v1 主仓库近 6 个月仅 2 次提交（均为文档），核心贡献者 2 人，无 GitHub release | 不能把 OpenTwins 当作"平台"依赖，只当作**参考集成方案 + 两个插件** |
 | 2 | ERTIS 正在开发 OpenTwins v2（WoT + Dgraph + Redpanda + TimescaleDB + Dapr），官方声明 WIP、无前端、不可用于生产 | v1 是唯一可用版本，但已非主力方向；架构需与 OpenTwins 解耦 |
-| 3 | Type/Composition 能力实际在 `extended-api-for-eclipse-ditto`（无 LICENSE 文件，镜像 tag 为 `latest`）和 `grafana-app-opentwins`（Apache-2.0）中 | **法律风险**：无许可证 = 默认保留所有权利；核电交付不可接受，需向作者确认或替代 |
+| 3 | Type/Composition 能力实际在 `extended-api-for-eclipse-ditto`（无 LICENSE 文件，镜像 tag 为 `latest`）和 `grafana-app-opentwins`（Apache-2.0）中 | **法律风险**：无许可证 = 默认保留所有权利；对外交付不可接受，需向作者确认或替代 |
 | 4 | Eclipse Ditto 非常活跃（3.9.9，2026-11-19），OpenTwins chart 仍锁在 Ditto 3.3.7 | 直接用 Ditto 官方 compose + 新版本，不跟 OpenTwins chart |
 | 5 | OpenTwins chart 依赖 `bitnamilegacy/mongodb` 镜像 | 换成官方 `mongo` 镜像 |
 | 6 | InfluxDB 3 Core 默认查询窗口约 72 小时（基于 Parquet 文件数上限，可调） | PHM 需要月级趋势 → 底座用 **InfluxDB 2.x**（仍在维护，2.10.1 @ 2026-11-17） |
-| 7 | Telegraf 磁盘缓冲（`buffer_strategy = "disk"`）自 1.32 起提供，至今仍标为 experimental，且**不限制磁盘占用** | 可用于演示断网续传；需加磁盘监控，核电场景要单独评估 |
+| 7 | Telegraf 磁盘缓冲（`buffer_strategy = "disk"`）自 1.32 起提供，至今仍标为 experimental，且**不限制磁盘占用** | 可用于演示断网续传；需加磁盘监控，生产场景要单独评估 |
 | 8 | OpenPMX：个人项目（1 名贡献者，5 star，2026-04 起，LICENSE 未被 GitHub 识别） | **不采用**为核心组件，可作为 UI 参考 |
 | 9 | CMMS：Atlas CMMS（Grashjs/cmms，AGPL-3.0，873 star，v1.9.0 @ 2026-09）活跃；openMAINT（AGPL，2.4，SourceForge 分发，源码可见性有争议） | 首选 Atlas CMMS，P3 再接入 |
 | 10 | ProgPy 活跃（v1.9.0 @ 2026-10-23），许可证 NASA Open Source Agreement（NOSA），非 GPL 兼容 | 可用；NOSA 条款需法务过目 |
@@ -39,13 +39,12 @@
 | Grashjs/cmms (Atlas) | 2026-11-21 | 1.9.0 | **AGPL-3.0** | |
 | ika-rwth-aachen/mqtt_client | 2026-11-11 | — | MIT | ROS 2 ↔ MQTT |
 | open62541 | 2026-11-22 | — | MPL-2.0 | |
-| FreeOpcUa/opcua-asyncio | 2026-11-18 | — | LGPL-3.0 | P4 用于 OPC UA 模拟 |
 | unitree_sdk2 / unitree_ros2 | 2026-11-19 / 07-02 | — | BSD-3 | sdk2 自带 g1 示例 |
 | frankarobotics/libfranka / franka_ros2 | 2026-09 / 10 | — | Apache-2.0 | 见结论 12 |
 | agilexrobotics/piper_sdk | 2026-10-14 | — | MIT | 见结论 13 |
 | mujoco_menagerie | 2026-11-10 | — | 每个模型单独许可 | Piper MIT，Panda Apache-2.0，G1 为 Unitree 版权声明 |
 
-AGPL 说明：内部使用、不修改分发时无额外义务；若将修改版作为网络服务提供给第三方，需开放修改。核电交付前需要法务结论。
+AGPL 说明：内部使用、不修改分发时无额外义务；若将修改版作为网络服务提供给第三方，需开放修改。对外交付前需要法务结论。
 
 ## 3. docker-compose 服务清单（草案）
 
@@ -61,7 +60,6 @@ AGPL 说明：内部使用、不修改分发时无额外义务；若将修改版
 | phm-worker | 自建镜像：ProgPy + PyOD | P3 | 胶水 |
 | event-frame | 自建 | P3 | 胶水；存储待定（见下） |
 | atlas-cmms + postgres | Grashjs/cmms | P3 | 工单 |
-| opcua-sim | opcua-asyncio | P4 | 虚拟核电资产 |
 
 不纳入：Hono（Ditto connectivity 直连 MQTT 已足够）、Kafka/Zookeeper/RabbitMQ（只有用 Kafka-ML 时才需要）。
 

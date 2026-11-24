@@ -5,7 +5,7 @@
   ],
   "@type": "tm:ThingModel",
   "title": "Rotating Actuator",
-  "description": "Motor + transmission + encoder. Robot joints, pump motors and motor-operated valve actuators. Vendor differences are expressed only through tm:optional.",
+  "description": "Motor + transmission + encoder. Robot joints (G1, Panda, PiPER X). Vendor differences are expressed only through tm:optional.",
   "version": { "model": "1.0.0" },
   "links": [
     {

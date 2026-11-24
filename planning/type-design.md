@@ -34,46 +34,43 @@
 ```
 L3 层级 Thing     site / area / cell（仅 attributes，ISA-95 路径）
         │ attributes.parentId
-L2 资产 Thing     g1-001 / panda-001 / piperx-001 / pump-set-01   ← definition = 资产 TM
+L2 资产 Thing     g1-001 / panda-001 / piperx-001                 ← definition = 资产 TM
         │ tm:submodel（每个部件实例一个 Feature）
-L1 部件 Feature   joint_* / battery / controller / bearing_de     ← definition = 部件 TM
+L1 部件 Feature   joint_* / battery / controller                  ← definition = 部件 TM
         │ tm:extends
 L0 基类           monitored-component（PHM 通用属性）
 ```
 
-复用发生在 L0/L1：所有部件都继承同一个 PHM 基类，同一种部件 TM 在机器人和核电资产之间复用。L2 只是"清单"：列出由哪些部件组成。
+复用发生在 L0/L1：所有部件都继承同一个 PHM 基类，同一种部件 TM 在不同厂商、不同构型的机器人之间复用。L2 只是"清单"：列出由哪些部件组成。
 
 ## 4. Type 库清单
 
 | TM 文件 | 层 | 关键属性 | 首个使用者 |
 |---|---|---|---|
 | `base/monitored-component-1.0.0` | L0 | `phm` 分组：`healthIndex`（0–1）、`anomalyScore`、`rulHours`、`condition`（normal/watch/alert/fault）、`lastAssessedAt`、`modelRef`；event `conditionChanged` | 所有部件 |
-| `component/rotating-actuator-1.0.0` | L1 | status：`position`、`velocity`、`torque`、`motorPosition`、`current`、`busVoltage`、`windingTemperature`、`driverTemperature`、`faultCode`；configuration：`gearRatio`、`ratedTorque`、`maxTemperature` | 三台机器人的关节、核电泵电机、阀门电动执行机构 |
+| `component/rotating-actuator-1.0.0` | L1 | status：`position`、`velocity`、`torque`、`motorPosition`、`current`、`busVoltage`、`windingTemperature`、`driverTemperature`、`faultCode`；configuration：`gearRatio`、`ratedTorque`、`maxTemperature` | 三台机器人的全部关节 |
 | `component/battery-pack-1.0.0` | L1 | `soc`、`voltage`、`current`、`temperature`、`cycleCount`、`soh` | G1 |
 | `component/controller-1.0.0` | L1 | `cpuTemperature`、`cpuLoad`、`commLatencyMs`、`faultCodes`、`firmwareVersion` | 三台机器人 |
-| `component/bearing-1.0.0` | L1 | `vibrationRms`、`vibrationPeak`、`temperature`；configuration：bearing geometry | 核电泵（P4） |
-| `component/centrifugal-pump-1.0.0` | L1 | `flow`、`suctionPressure`、`dischargePressure` | 核电泵（P4），**P4 唯一新增的部件 TM** |
 | `asset/humanoid-unitree-g1-29dof-1.0.0` | L2 | 29 个关节 + battery + controller | G1 29 自由度（P1 首台） |
 | `asset/arm-franka-panda-1.0.0` | L2 | 7 个关节 + controller (+ gripper) | Panda |
 | `asset/arm-agilex-piperx-1.0.0` | L2 | 6 个关节 + gripper + controller | PiperX |
-| `asset/motor-pump-set-1.0.0` | L2 | motor + 2 × bearing + pump | 核电虚拟资产 |
 | `asset/asset-group-1.0.0` | L3 | `isa95Level`、`isa95Path` | 层级节点 |
 
 厂商差异全部通过 `tm:optional` 表达，不派生"G1 关节""Franka 关节"这样的子类。只有当某个厂商有**额外**属性时，才用 `tm:extends` 加一层。
 
 ## 5. 信号覆盖矩阵（RotatingActuator，已对照 SDK 源码核查）
 
-| 属性 | G1（unitree_hg `MotorState`） | Panda（libfranka `RobotState`） | PiperX（piper_sdk 反馈） | 核电泵电机（P4） |
-|---|---|---|---|---|
-| position | `q` | `q` | 高速反馈 | — |
-| velocity | `dq` | `dq` | 高速反馈 | 转速 |
-| torque | `tau_est` | `tau_J`（关节力矩传感器） | — | 可选 |
-| motorPosition | — | `theta` | — | — |
-| current | — | — | 高速反馈电流 / `bus_current` | 定子电流 |
-| busVoltage | `vol` | — | `vol` | — |
-| windingTemperature | `temperature[0..1]`* | — | `motor_temp` | 绕组温度 |
-| driverTemperature | — | — | `foc_temp` | — |
-| faultCode | `motorstate` | `joint_collision`, 错误标志 | `foc_status` 各标志位 | 报警点 |
+| 属性 | G1（unitree_hg `MotorState`） | Panda（libfranka `RobotState`） | PiperX（piper_sdk 反馈） |
+|---|---|---|---|
+| position | `q` | `q` | 高速反馈 |
+| velocity | `dq` | `dq` | 高速反馈 |
+| torque | `tau_est` | `tau_J`（关节力矩传感器） | — |
+| motorPosition | — | `theta` | — |
+| current | — | — | 高速反馈电流 / `bus_current` |
+| busVoltage | `vol` | — | `vol` |
+| windingTemperature | `temperature[0..1]`* | — | `motor_temp` |
+| driverTemperature | — | — | `foc_temp` |
+| faultCode | `motorstate` | `joint_collision`, 错误标志 | `foc_status` 各标志位 |
 
 \* G1 的两个温度通道具体含义待真机确认。PiperX 高速反馈的字段名在 P1 时逐个核对。
 
@@ -81,11 +78,10 @@ L0 基类           monitored-component（PHM 通用属性）
 - G1：绕组温度 → ProgPy 热模型、RUL。
 - Panda：`theta - q`（电机侧与连杆侧位置差）→ 关节弹性和减速器磨损指标；外力估计残差。
 - PiperX：电流 × 温度 → 过载趋势；驱动器故障标志统计。
-- 核电泵：电流、振动、温度 → APR / AAKR 异常检测。
 
 ## 6. 约定（全部为配置，不写代码）
 
-- **Thing ID**：`<namespace>:<asset>`，例如 `lab.robots:g1-001`、`plant.sim:pump-set-01`。
+- **Thing ID**：`<namespace>:<asset>`，例如 `lab.robots:g1-001`、`lab.robots:panda-001`。
 - **Feature ID** = 关节名，**直接取 MuJoCo Menagerie / URDF 中的关节名**。孪生、3D 和仿真共用这唯一的命名来源。
 - **单位**：SI，在 TM 的 `unit` 字段声明。
 - **速率分层**：Feature 属性只存 1–10 Hz 的状态和 PHM 结果。原始高频数据进 InfluxDB，tag 用 `thing_id` 和 `feature_id`，与 Ditto 完全同名，这就是 PI AF 那种"把时序数据挂到资产上"的上下文化。
@@ -143,7 +139,7 @@ L0 基类           monitored-component（PHM 通用属性）
 
 | 限制 | 处理 |
 |---|---|
-| 组合只有一层（Thing → Feature），Feature 不能再嵌套 | 深层结构拆成多个 Thing，用 `parentId` 关联。例如"泵组"Thing 下挂"电机"Feature，而不是嵌套三层 |
+| 组合只有一层（Thing → Feature），Feature 不能再嵌套 | 深层结构拆成多个 Thing，用 `parentId` 关联。例如"工作单元"Thing 下挂多台机器人 Thing，而不是嵌套三层 |
 | Ditto 没有原生关系模型和图查询 | attributes 约定 + RQL；对比 ADT 的 Relationship，这是**明确的差距**，在能力矩阵里如实标注 |
 | TM 必须能通过 HTTP 下载 | compose 内置 nginx 托管 |
 | `model-placeholders` 不受 Policy 保护 | 不在占位符中放敏感信息；厂商差异用静态 `tm:optional` 表达，不用占位符 |
@@ -161,4 +157,4 @@ L0 基类           monitored-component（PHM 通用属性）
 1. 关节名（Feature ID）统一采用 MuJoCo MJCF 中的关节名；厂商 SDK 的索引到名称的映射放在适配器配置里。
    - 补充（2026-11-23）：实验室的 G1 经真机探测确认为 **29 自由度**（DDS `rt/lowstate` 中 0–28 号电机全部在线），用户已确认。关节名直接取 Menagerie `unitree_g1/g1.xml` 的 29 个关节，其顺序与 DDS 电机索引 0–28 一一对应：左右腿各 6、腰 yaw/roll/pitch、左右臂各 7（shoulder pitch/roll/yaw、elbow、wrist roll/pitch/yaw）。索引表见 `unitree_mujoco/unitree_robots/g1/g1_joint_index_dds.md`；额定力矩按电机型号取自 `unitree_ros/robots/g1_description/motor_info.md`。
 2. PHM 结果在每次评估后写回 Ditto 的 Feature `phm` 分组，评估周期为分钟级。
-3. P4 的核电虚拟资产选"泵—电机—轴承"组合（`asset/motor-pump-set`）。
+3. ~~P4 核电虚拟资产~~：2026-11-24 起项目只专注机器人，核电部分已全部移除。
