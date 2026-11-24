@@ -4,10 +4,12 @@
 piper_sdk feedback cache, polled at --poll-hz -> phm/raw/<thing>/joint1..6   batched samples (InfluxDB via Telegraf)
                                                -> phm/state/<thing>           Ditto merge patch at --state-hz
 Backends: --backend sdk (piper_sdk on a SocketCAN port; firmware >= 1.8-8 uses C_PiperInterface_V3, older V2),
-fake (synthetic feedback for offline end-to-end tests). Topic/payload contract: stack/README.md.
+sim (MuJoCo Menagerie agilex_piper via mujoco_sim.py), fake (synthetic feedback without dependencies). Topic/payload contract: stack/README.md.
 Joint feedback only flows while the arm is in slave mode (piper_sdk README); this adapter never changes that.
 """
 import argparse, json, math, os, threading, time
+
+import numpy as np
 from types import SimpleNamespace as NS
 
 JOINTS = [f"joint{i}" for i in range(1, 7)]  # MuJoCo Menagerie agilex_piper joint names
@@ -26,6 +28,8 @@ def open_piper(a):
     """Return (piper, firmware string). piper exposes the piper_sdk Get* feedback methods."""
     if a.backend == "fake":
         return FakePiper(), "fake"
+    if a.backend == "sim":
+        return SimPiper(a), "sim"
     import piper_sdk
     cls = getattr(piper_sdk, f"C_PiperInterface_{a.sdk_version}")
     p = cls(can_name=a.can)
@@ -36,7 +40,8 @@ def open_piper(a):
 
 
 def foc_word(foc):
-    return sum(1 << i for i, n in enumerate(FOC_BITS) if getattr(foc, n, False))
+    """faultCode: set foc_status flags; bit 6 (driver enabled) is a state, not a fault, so it stays 0."""
+    return sum(1 << i for i, n in enumerate(FOC_BITS) if n != "driver_enable_status" and getattr(foc, n, False))
 
 
 def status_names(st):
@@ -80,6 +85,58 @@ class FakePiper:
         err = NS(**{f"joint_{i}_angle_limit": False for i in range(1, 7)})
         return NS(time_stamp=time.time(), Hz=200.0,
                   arm_status=NS(ctrl_mode=0, arm_status=0, err_status=err))
+
+
+class SimPiper:
+    """Menagerie agilex_piper physics behind the piper_sdk getters: one high-speed frame per 5 ms of wall time."""
+    TAU_RATED = (10, 10, 10, 3, 3, 3)  # assumed rated joint torques [N*m]; not published by AgileX
+    FRAME = 0.005
+
+    def __init__(self, a):
+        from mujoco_sim import ArmSim, parse_wear
+        self.sim = ArmSim(os.path.join(a.menagerie, "agilex_piper", "piper.xml"), JOINTS, self.TAU_RATED,
+                          wear=parse_wear(a.sim_wear))
+        self.t_sim, self.f = time.time(), None
+        self._sync()
+
+    def _sync(self):
+        now = time.time()
+        n = int((now - self.t_sim) / self.FRAME)
+        if n == 0 and self.f is not None:
+            return
+        n = min(max(n, 1), 20)  # after a stall, catch up at most 100 ms of physics
+        self.sim.step(n * self.FRAME)
+        self.t_sim = max(self.t_sim + n * self.FRAME, now - 0.1)
+        s = self.sim
+        tau = s.tau()
+        amps = 0.15 + abs(tau) / (np.array(self.TAU_RATED) / 3)  # ~3 A at rated torque
+        self.f = NS(ts=now, q=s.q(), dq=s.dq(), tau=tau, amps=amps, temps=s.temps(), vol=24.0 - 0.05 * amps.sum())
+
+    def GetArmJointMsgs(self):
+        self._sync()
+        f = self.f
+        return NS(time_stamp=f.ts, Hz=200.0, joint_state=NS(**{f"joint_{i + 1}": int(round(math.degrees(v) * 1000))
+                                                              for i, v in enumerate(f.q)}))
+
+    def GetArmHighSpdInfoMsgs(self):
+        self._sync()
+        f = self.f
+        m = {f"motor_{i + 1}": NS(motor_speed=int(f.dq[i] * 1000), current=int(f.amps[i] * 1000),
+                                  effort=int(f.tau[i] * 1000), pos=0) for i in range(6)}
+        return NS(time_stamp=f.ts, Hz=200.0, **m)
+
+    def GetArmLowSpdInfoMsgs(self):
+        self._sync()
+        f, (tw, td) = self.f, self.f.temps
+        m = {f"motor_{i + 1}": NS(vol=int(round(f.vol * 10)), motor_temp=int(tw[i]), foc_temp=int(td[i]),
+                                  bus_current=int(f.amps.sum() * 1000),
+                                  foc_status=NS(**{n: n == "driver_enable_status" or (n == "motor_overheating" and tw[i] > 70)
+                                                   for n in FOC_BITS})) for i in range(6)}
+        return NS(time_stamp=f.ts, Hz=20.0, **m)
+
+    def GetArmStatus(self):
+        err = NS(**{f"joint_{i}_angle_limit": False for i in range(1, 7)})
+        return NS(time_stamp=self.f.ts, Hz=200.0, arm_status=NS(ctrl_mode=1, arm_status=0, err_status=err))
 
 
 class Adapter:
@@ -150,7 +207,7 @@ class Adapter:
         joints, ctrl = snap
         feats = {n: {"properties": {"status": j}} for n, j in zip(JOINTS, joints)}
         feats["controller"] = {"properties": {"status": ctrl}}
-        if firmware and firmware not in ("-", "fake"):
+        if firmware and firmware not in ("-", "fake", "sim"):
             feats["controller"]["properties"]["configuration"] = {"firmwareVersion": firmware}
         ns, name = self.a.thing.split(":")
         self._pub(f"phm/state/{self.a.thing}", json.dumps({
@@ -189,7 +246,7 @@ class Adapter:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--backend", choices=("sdk", "fake"), default="sdk")
+    ap.add_argument("--backend", choices=("sdk", "sim", "fake"), default="sdk")
     ap.add_argument("--can", default="can0", help="SocketCAN interface of the arm")
     ap.add_argument("--sdk-version", choices=("V2", "V3"), default="V3", help="V3 for firmware >= 1.8-8")
     ap.add_argument("--thing", default="lab.robots:piperx-001")
@@ -200,5 +257,9 @@ if __name__ == "__main__":
     ap.add_argument("--raw-batch-ms", type=int, default=200)
     ap.add_argument("--state-hz", type=float, default=5)
     ap.add_argument("--duration", type=float, default=None, help="seconds; default run forever")
+    ap.add_argument("--menagerie", default=os.environ.get("MENAGERIE_DIR", os.path.expanduser("~/mujoco_menagerie")),
+                    help="sim backend: mujoco_menagerie checkout")
+    ap.add_argument("--sim-wear", nargs="*", metavar="JOINT=RATE",
+                    help="sim backend: added damping and friction per hour, e.g. joint2=2")
     ap.add_argument("--dry-run", action="store_true", help="print instead of publishing to MQTT")
     Adapter(ap.parse_args()).run()

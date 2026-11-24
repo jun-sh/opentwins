@@ -28,8 +28,8 @@
 |---|---|
 | P0 选型冻结 | ✅ |
 | P1 单机打通 | 🟡 中心服务栈 ✅、Panda 孪生 + 模拟数据 ✅；**G1 29 自由度：TM、孪生、适配器、真机上行 ✅；Grafana 面板 ✅** |
-| P2 Type 复用 | 🟡 Panda 适配器 `stack/adapters/panda_franka_mqtt.py` 已写好，fake 后端端到端通过（核心代码改动 0 行），**真机未跑**（无访问方式）；PiperX 适配器 + TM + 孪生 `lab.robots:piperx-001` 已建，fake 后端端到端通过，**真机未跑** |
-| P3 PHM 链路 | 🟡 G1：PHM worker（ProgPy 热模型 + PyOD ECOD）每 120 s 写回 29 个关节的 `phm` ✅；Event Frame（InfluxDB `event_frame` + Ditto `conditionChanged`）✅；Grafana `G1 PHM Health` ✅；Atlas CMMS 只评估未部署（见 `p3-phm.md`）；`maxTemperature` 用占位 80 °C |
+| P2 Type 复用 | 🟡 Panda 适配器 `stack/adapters/panda_franka_mqtt.py` 已写好，fake 后端端到端通过（核心代码改动 0 行），**真机未跑**（无访问方式）；PiperX 适配器 + TM + 孪生 `lab.robots:piperx-001` 已建，fake 后端端到端通过，**真机未跑**；两者都有 MuJoCo 仿真后端（`--backend sim`，Menagerie 模型），在 DGX 上持续产生数据（见 §5 仿真） |
+| P3 PHM 链路 | 🟡 PHM worker（ProgPy 热模型 + PyOD ECOD）每 120 s 评估三台机器人（G1 29 + Panda 7 + PiperX 6 个关节）并写回 `phm` ✅；Grafana `PHM Fleet Overview` + `PHM Health per Robot` ✅；Event Frame（InfluxDB `event_frame` + Ditto `conditionChanged`）✅；Atlas CMMS 只评估未部署（见 `p3-phm.md`）；`maxTemperature` 用占位 80 °C |
 | P4 ~~核电演示~~ | ❌ 已取消（2026-11-24，项目只做机器人） |
 | P5 加固 | 🟡 离线部署 + SBOM ✅（无网络隔离环境安装已验证，见 §5 P5）；审计未做 |
 
@@ -46,6 +46,15 @@
 G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab.robots:g1-001`（31 个 Feature）、适配器 `stack/adapters/g1_dds_mqtt.py`（167 行，已登记；原始数据已压缩以适应跳板机 WiFi，入库 99.5–100%）、Grafana 面板 `G1 Thermal & Battery`、跳板机 systemd 常驻服务。
 
 **优先级建议**（不依赖人的工作已做完，以下都要人提供信息或到现场）：① 查明 G1 `rt/lowstate` 间歇停发（18:36、20:05 CST 各一次，BMS 正常），可能是有人在用或切了模式；② 提供 Panda、PiperX 真机接入方式（哪台机器、控制柜 IP / CAN 口），然后跑通两个适配器并记录采样率和丢包；③ 确认 G1 关节 `maxTemperature`（现为占位 80 °C）和 PHM 阈值；④ 决定是否部署 Atlas CMMS（AGPL）；⑤ P5 加固（离线部署、SBOM）可无人值守进行；⑥ 有条件时把跳板机改为有线连 DGX（WiFi 余量约 0.7 MB/s）。
+
+### 仿真与多机器人 PHM（2026-11-24，A1+A2）
+- `stack/adapters/mujoco_sim.py`（84 行）：Menagerie MJCF 在自带位置伺服下跑平滑往复轨迹（关闭 PiPER 模型的重力补偿，让驱动承担重力），实时步进；一阶热模型（绕组/驱动器温升 ∝ 扭矩²）、传感器噪声；`--sim-wear JOINT=RATE` 每小时增加阻尼和摩擦，用来给 PHM 制造可检测的退化。Panda 仿真按 FCI 实际情况不输出温度。
+- Menagerie 稀疏克隆在 `~/models/mujoco_menagerie`（只含 `franka_emika_panda`、`agilex_piper`，提交 eea4c74），不进仓库。宿主机 Python 已有 mujoco 3.11.0、paho 1.5.1。
+- 验证：Panda 仿真 990–1000 Hz、丢包 0；PiperX 新帧 184–194 Hz；PHM worker 每轮三台机器人（G1 74 s 含重拟合，Panda 0.4 s，PiperX 0.2 s）；Fleet 面板和单机面板全部查询有数据、无错误。
+- **当前两个仿真适配器是本会话启动的后台进程（`nohup`），重启即消失**；常驻需安装用户服务（自动模式拒绝了这一步，等用户决定）：
+  `install -m600 /dev/null ~/.config/phm-sim/env` 后写入 `OPENTWINS_STACK=<repo>/stack`、`MENAGERIE_DIR=~/models/mujoco_menagerie`、`MQTT_EDGE_PASSWORD=...`；`cp stack/adapters/systemd/{panda,piperx}-sim-adapter.service ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now panda-sim-adapter piperx-sim-adapter`（先 `pkill -f 'backend sim'`）。
+- PiPER 单元对 `joint2` 注入磨损 0.5/小时（阻尼 N·m·s/rad 与摩擦 N·m），重启适配器即复位；预计数小时后 `joint2` 扭矩/温度上升、ECOD 打分升高。
+- 坑：`stack/.env` 含 `COMPOSE_PROJECT_NAME=phm`，在 `stack/phm` 里用 `--env-file ../.env` 会把 worker 建进 `phm` 项目；必须 `docker-compose -p phm-analytics --env-file ../.env up -d --build`。
 
 ### P5 离线部署与 SBOM 状态（2026-11-23，分支 `claude/phm-p5-offline-sbom-f4b530`）
 - 全部在 `stack/offline/`，用法见 `stack/README.md` 的 P5 小节。**核心文件改动 0 个**：compose 文件、Dockerfile、`scripts/`、各类配置均未修改；只新增 `offline/` 下文件，外加 `stack/README.md`（登记表 + P5 小节）和本文件（文档）。
@@ -66,7 +75,7 @@ G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab
 
 ### P2 PiperX 适配器状态（2026-11-23）
 - 新增 TM `asset/arm-agilex-piperx-1.0.0`（6 个 `rotating-actuator` 关节 `joint1..6` + `controller`，关节名取自 Menagerie `agilex_piper`，那是标准 PiPER，PiPER X 运动学待确认；夹爪暂不建模）、孪生 `lab.robots:piperx-001`（现有 `provision.sh` 创建）。核心代码改动 0 行。
-- `stack/adapters/piperx_can_mqtt.py`（204 行，已登记）：以 `--poll-hz`（默认 200）轮询 piper_sdk 的反馈缓存，高速帧 `time_stamp` 变化才记一条样本。映射：`joint_state.joint_i`（0.001°）→`position`；高速 `motor_speed`（0.001 rad/s）→`velocity`、`effort`（0.001 N·m）→`torque`、`current`（0.001 A）→`current`；低速 `vol`（0.1 V）→`busVoltage`、`motor_temp`→`windingTemperature`、`foc_temp`→`driverTemperature`、`foc_status` 8 个标志位→`faultCode`（位序见代码 `FOC_BITS`；位 6 `driver_enable_status` 在正常使能时为 1，即正常值 64）。`controller.status.mode` = `ctrl_mode/arm_status`，`faultCodes` = 非正常 `arm_status` + `err_status` 中为真的标志；固件版本写入 `controller.configuration.firmwareVersion`。
+- `stack/adapters/piperx_can_mqtt.py`（204 行，已登记）：以 `--poll-hz`（默认 200）轮询 piper_sdk 的反馈缓存，高速帧 `time_stamp` 变化才记一条样本。映射：`joint_state.joint_i`（0.001°）→`position`；高速 `motor_speed`（0.001 rad/s）→`velocity`、`effort`（0.001 N·m）→`torque`、`current`（0.001 A）→`current`；低速 `vol`（0.1 V）→`busVoltage`、`motor_temp`→`windingTemperature`、`foc_temp`→`driverTemperature`、`foc_status` 8 个标志位→`faultCode`（位序见代码 `FOC_BITS`；位 6 `driver_enable_status` 是状态不是故障，2026-11-24 起恒为 0，正常值 0）。`controller.status.mode` = `ctrl_mode/arm_status`，`faultCodes` = 非正常 `arm_status` + `err_status` 中为真的标志；固件版本写入 `controller.configuration.firmwareVersion`。
 - 字段名和单位来自 piper_sdk 的 INTERFACE_V2/V3 文档，**未对照代码和真机核对**；反馈频率文档未给出，运行时打印 SDK 的 `Hz` 字段。
 - 离线验证（fake，DGX）：200 Hz 新帧；Ditto 6 关节 + controller 实时更新；InfluxDB 25 s 内每关节 4930 条（≈ 200 Hz × 运行时长）。
 - 真机步骤：① 工控机上 `pip install piper_sdk`，配置 SocketCAN（`can0`，1 Mbit/s）；② `--dry-run --duration 10` 读固件版本（≥ 1.8-8 用 V3）并确认机型是 PiPER X；③ 正式运行 60 s，记录 `[stats]` 的帧率；④ 做 systemd 单元。需用户提供：PiperX 连在哪台机器、CAN 口名。
@@ -74,7 +83,7 @@ G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab
 ### P3 PHM 状态（2026-11-23，分支 `claude/phm-p3-pipeline-4cb468`）
 - 设计、参数、局限、Atlas 评估：`planning/p3-phm.md`。核心代码（TM、Ditto/Telegraf/mosquitto 配置、主 compose）改动 0 行；worker 是独立 compose 项目 `phm-analytics`（`stack/phm/`），只加入 `phm_default` 网络。
 - 运行：`cd stack/phm && docker-compose -p phm-analytics --env-file ../.env up -d --build`（`-p` 必须带）。`restart: unless-stopped` + `init: true`；进程被 kill -9 后自动拉起已验证；未结束的 Event Frame 重启后从 InfluxDB 恢复（已用临时 thing_id 验证后删除）。
-- Grafana 面板 `G1 PHM Health`（uid `phm-g1-health`）已通过 API 导入运行中的 Grafana；文件在 `stack/grafana/dashboards/g1-phm-health.json`，分支合并后由文件 provisioning 接管。
+- Grafana 面板 `PHM Health per Robot`（原 `G1 PHM Health`，uid `phm-g1-health` 未改，按 thing_id 切换机器人）已通过 API 导入运行中的 Grafana；文件在 `stack/grafana/dashboards/g1-phm-health.json`，分支合并后由文件 provisioning 接管。
 - 待人工：① 宇树 G1 关节过温限值 → 写入各关节 `configuration.maxTemperature`；② 是否部署 Atlas CMMS（AGPL）；③ 阈值（watch/alert）需要带载数据后再调。
 - G1 曾离线：`rt/lowstate` 10:36–11:20 UTC（18:36–19:20 CST）为 0 Hz（电池数据正常）；11:45 UTC 复查时已恢复（10 min 约 45 万样本/关节，Telegraf 修复后）。worker 对 10 min 无数据的关节不评估（`rulHours=-1`，InfluxDB 标 `stale`），历史回放模式见 `p3-phm.md`。**若机器人再次离线，实时链路需在其恢复后复查**；最后一次实时复查：2026-11-23 11:43 UTC，29 个关节均有新评估。
 

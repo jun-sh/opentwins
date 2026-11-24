@@ -1,10 +1,11 @@
 """PHM worker (P3): InfluxDB history -> ProgPy thermal RUL + PyOD anomaly score -> Ditto `phm` group.
 
-Every PHM_PERIOD_S, for every *_joint Feature of PHM_THING_ID:
+Every PHM_PERIOD_S, for every joint Feature (`*_joint` or `jointN`) of each Thing in PHM_THING_IDS:
   * reads 30 s aggregates (temperatures, torque mean/min/max, velocity, faultCode) from InfluxDB
   * anomalyScore = PyOD ECOD score of the last PHM_ASSESS_S, relative to the fitted threshold
     (fit on the rest of the PHM_HISTORY_S window; 1.0 = at the 'contamination' threshold)
   * rulHours = ProgPy JointThermal time to configuration.maxTemperature at the recent mean load
+    (-1 = not estimated: no fresh data, or the robot reports no joint temperatures, e.g. Franka FCI)
   * healthIndex = min(thermal margin (ProgPy event_state), anomaly factor); condition by thresholds
 Writes: Ditto merge patch on /features (HTTP, OWNER user), InfluxDB measurement `phm` (for Grafana),
 and Event Frames: InfluxDB measurement `event_frame` (phase=start/end) + Ditto `conditionChanged` event.
@@ -12,7 +13,9 @@ and Event Frames: InfluxDB measurement `event_frame` (phase=start/end) + Ditto `
 import csv
 import io
 import json
+import math
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -24,7 +27,8 @@ from pyod.models.ecod import ECOD
 from thermal_model import JointThermal, fit, time_to_overheat_h
 
 E = os.environ
-THING = E.get("PHM_THING_ID", "lab.robots:g1-001")
+THINGS = [t.strip() for t in E.get("PHM_THING_IDS", E.get("PHM_THING_ID", "lab.robots:g1-001")).split(",") if t.strip()]
+JOINT_RE = re.compile(r"(_joint|^joint[0-9]+)$")  # G1 Menagerie names / Panda and PiPER joint1..N
 DITTO = E.get("DITTO_URL", "http://nginx:80").rstrip("/")
 DITTO_AUTH = (E.get("DITTO_USER", "admin"), E["DITTO_USER_PASSWORD"])
 INFLUX = E.get("INFLUX_URL", "http://influxdb:8086").rstrip("/")
@@ -47,7 +51,7 @@ LEVEL = {"normal": 0, "watch": 1, "alert": 2, "fault": 3}
 
 FLUX = """
 src = (fld, fn, as) => from(bucket: "{b}") |> range(start: {start}, stop: {stop})
-  |> filter(fn: (r) => r._measurement == "telemetry" and r.thing_id == "{t}" and r.feature_id =~ /_joint$/ and r._field == fld)
+  |> filter(fn: (r) => r._measurement == "telemetry" and r.thing_id == "{t}" and r.feature_id =~ /(_joint|^joint[0-9]+)$/ and r._field == fld)
   |> aggregateWindow(every: 30s, fn: fn, createEmpty: false) |> set(key: "_field", value: as)
 """
 # One from() per stream: a source shared by several branches is not pushed down to storage.
@@ -79,10 +83,10 @@ def iso(t):
     return datetime.fromtimestamp(t, timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def load_history(now):
+def load_history(thing, now):
     cols = ", ".join(f'"{c}"' for c in FIELDS)
     per = {}
-    for row in flux(FLUX.format(b=BUCKET, start=iso(now - HISTORY), stop=iso(now + 1), t=THING, cols=cols)):
+    for row in flux(FLUX.format(b=BUCKET, start=iso(now - HISTORY), stop=iso(now + 1), t=thing, cols=cols)):
         f = row.get("feature_id")
         if not f or row.get("_time") in (None, "_time"):
             continue
@@ -101,15 +105,16 @@ def tag(v):
     return v.replace(",", r"\,").replace(" ", r"\ ").replace("=", r"\=")
 
 
-def ditto(method, path, **kw):
-    r = requests.request(method, f"{DITTO}/api/2/things/{THING}{path}", auth=DITTO_AUTH, timeout=30, **kw)
+def ditto(thing, method, path, **kw):
+    r = requests.request(method, f"{DITTO}/api/2/things/{thing}{path}", auth=DITTO_AUTH, timeout=30, **kw)
     if r.status_code >= 300:
-        print(f"[ditto] {method} {path} -> {r.status_code} {r.text[:300]}")
+        print(f"[ditto] {method} {thing}{path} -> {r.status_code} {r.text[:300]}")
     return r
 
 
 def anomaly_score(t, x, now):
     """ECOD fitted on history before the assessment window; mean score of the window / threshold."""
+    x = x[:, ~np.isnan(x).all(axis=0)]  # drop signals this robot does not report (e.g. temperatures)
     ok = ~np.isnan(x).any(axis=1)
     t, x = t[ok], x[ok]
     recent = t >= now - ASSESS
@@ -122,31 +127,34 @@ def anomaly_score(t, x, now):
 
 
 class Worker:
-    def __init__(self):
+    def __init__(self, thing):
+        self.thing = thing
         self.models, self.fitted_at, self.cond, self.frames = {}, {}, {}, {}
         self.restore_frames()
 
     def restore_frames(self):
         """Reopen Event Frames whose last record is a start (survives restarts)."""
         q = (f'from(bucket: "{BUCKET}") |> range(start: -30d) |> filter(fn: (r) => r._measurement == "event_frame"'
-             f' and r.thing_id == "{THING}") |> last() |> pivot(rowKey: ["_time"], columnKey: ["_field"],'
+             f' and r.thing_id == "{self.thing}") |> last() |> pivot(rowKey: ["_time"], columnKey: ["_field"],'
              f' valueColumn: "_value") |> keep(columns: ["_time", "feature_id", "phase", "condition"])')
         for row in flux(q):
             if row.get("phase") == "start":
                 self.frames[row["feature_id"]] = ts(row["_time"])
                 self.cond[row["feature_id"]] = row.get("condition", "watch")
-        print(f"[init] open event frames: {sorted(self.frames)}")
+        print(f"[init] {self.thing}: open event frames: {sorted(self.frames)}")
 
     def thermal(self, f, t, x, tmax):
         m = self.models.setdefault(f, JointThermal())
         m.parameters["t_max"] = tmax
+        if np.isnan(x[:, 0:2]).all():
+            return math.nan, -1.0, 1.0  # no temperature signal: thermal RUL not estimated
         hot = np.nanmax(x[:, 0:2], axis=1)
         load = np.nan_to_num(x[:, 2]) ** 2 + (np.nan_to_num(x[:, 5] - x[:, 4]) / 2) ** 2  # mean^2 + ~spread^2
         ok = ~np.isnan(hot)
         if time.time() - self.fitted_at.get(f, 0) > REFIT:
             seg = ok & (t >= t[-1] - 2 * 3600)
             if fit(m, t[seg].tolist(), hot[seg].tolist(), load[seg].tolist()):
-                print(f"[fit] {f}: " + ", ".join(f"{k}={float(m.parameters[k]):.3g}" for k in ("tau", "k", "t_amb")))
+                print(f"[fit] {self.thing}/{f}: " + ", ".join(f"{k}={float(m.parameters[k]):.3g}" for k in ("tau", "k", "t_amb")))
             self.fitted_at[f] = time.time()
         recent = ok & (t >= t[-1] - ASSESS)
         t_now, u = float(hot[ok][-1]), float(np.mean(load[recent])) if recent.any() else 0.0
@@ -157,33 +165,33 @@ class Worker:
         if fault or t_now >= tmax:
             return "fault", "faultCode" if fault else "temperature >= maxTemperature"
         for name, (s_lim, r_lim) in (("alert", ALERT), ("watch", WATCH)):
-            if rul < r_lim:
+            if 0 <= rul < r_lim:
                 return name, f"rulHours {rul:.2f} < {r_lim}"
             if score is not None and score >= s_lim:
                 return name, f"anomalyScore {score:.2f} >= {s_lim}"
         return "normal", ""
 
     def event_frame(self, f, old, new, reason, now, lines):
-        ditto("POST", f"/features/{f}/outbox/messages/conditionChanged", params={"timeout": "0"},
+        ditto(self.thing, "POST", f"/features/{f}/outbox/messages/conditionChanged", params={"timeout": "0"},
               data=json.dumps({"from": old, "to": new, "reason": reason}),
               headers={"Content-Type": "application/json"})
-        base = f"event_frame,thing_id={tag(THING)},feature_id={tag(f)}"
+        base = f"event_frame,thing_id={tag(self.thing)},feature_id={tag(f)}"
         if old == "normal":
             self.frames[f] = now
             lines.append(f'{base} phase="start",condition="{new}",reason="{reason}" {int(now)}')
         elif new == "normal" and f in self.frames:
             dur = now - self.frames.pop(f)
             lines.append(f'{base} phase="end",condition="{old}",reason="recovered",durationS={dur:.0f} {int(now)}')
-        print(f"[frame] {f}: {old} -> {new} ({reason})")
+        print(f"[frame] {self.thing}/{f}: {old} -> {new} ({reason})")
 
     def cycle(self, now=None, dry_run=False):
         """One assessment as of `now` (default: wall clock). dry_run prints instead of writing."""
         started, now = time.time(), now or time.time()
-        feats = ditto("GET", "/features").json()
-        hist = load_history(now)
+        feats = ditto(self.thing, "GET", "/features").json()
+        hist = load_history(self.thing, now)
         patch, lines, stale = {}, [], []
         stamp = iso(now)
-        for f in sorted(k for k in feats if k.endswith("_joint")):
+        for f in sorted(k for k in feats if JOINT_RE.search(k)):
             t, x = hist.get(f, (np.array([]), None))
             if not len(t) or now - t[-1] > STALE:
                 # No fresh data: the TM condition enum has no "unknown", so keep the last assessment
@@ -191,7 +199,7 @@ class Worker:
                 stale.append(f)
                 if feats[f].get("properties", {}).get("phm", {}).get("rulHours", -1) != -1:
                     patch[f] = {"properties": {"phm": {"rulHours": -1}}}
-                lines.append(f'phm,thing_id={tag(THING)},feature_id={tag(f)} conditionLevel=-1i,condition="stale" {int(now)}')
+                lines.append(f'phm,thing_id={tag(self.thing)},feature_id={tag(f)} conditionLevel=-1i,condition="stale" {int(now)}')
                 continue
             tmax = feats[f].get("properties", {}).get("configuration", {}).get("maxTemperature", DEFAULT_TMAX)
             fault = bool(np.nanmax(x[t >= now - ASSESS, 6], initial=0) > 0)
@@ -202,9 +210,10 @@ class Worker:
             phm = {"healthIndex": round(hi, 4), "anomalyScore": round(score or 0.0, 4),
                    "rulHours": round(rul, 3), "condition": cond, "lastAssessedAt": stamp, "modelRef": MODEL_REF}
             patch[f] = {"properties": {"phm": phm}}
-            lines.append(f"phm,thing_id={tag(THING)},feature_id={tag(f)} healthIndex={phm['healthIndex']},"
+            temp = f",temperature={t_now}" if math.isfinite(t_now) else ""
+            lines.append(f"phm,thing_id={tag(self.thing)},feature_id={tag(f)} healthIndex={phm['healthIndex']},"
                          f"anomalyScore={phm['anomalyScore']},rulHours={phm['rulHours']},"
-                         f"conditionLevel={LEVEL[cond]}i,condition=\"{cond}\",temperature={t_now} {int(now)}")
+                         f"conditionLevel={LEVEL[cond]}i,condition=\"{cond}\"{temp} {int(now)}")
             old = self.cond.get(f, "normal")
             if cond != old and dry_run:
                 print(f"  [frame] {f}: {old} -> {cond} ({reason})")
@@ -214,29 +223,31 @@ class Worker:
         if dry_run:
             for f, p in patch.items():
                 print(f"  {f:28s} {json.dumps(p['properties']['phm'])}")
-            print(f"[dry-run] {iso(now)}: assessed {sum(f not in stale for f in patch)}, stale {len(stale)}")
+            print(f"[dry-run] {self.thing} {iso(now)}: assessed {sum(f not in stale for f in patch)}, stale {len(stale)}")
             return
         if patch:
-            ditto("PATCH", "/features", data=json.dumps(patch), headers={"Content-Type": "application/merge-patch+json"})
+            ditto(self.thing, "PATCH", "/features", data=json.dumps(patch), headers={"Content-Type": "application/merge-patch+json"})
         influx_write(lines)
-        print(f"[cycle] {iso(now)} assessed {sum(f not in stale for f in patch)}, stale {len(stale)}, "
+        print(f"[cycle] {self.thing} {iso(now)} assessed {sum(f not in stale for f in patch)}, stale {len(stale)}, "
               f"{time.time() - started:.1f}s; open frames {len(self.frames)}", flush=True)
 
 
 def main():
     if len(sys.argv) > 1:  # replay: phm_worker.py <ISO time> [...]  -> dry-run assessments as of past times
-        w = Worker()
-        for a in sys.argv[1:]:
-            w.cycle(now=ts(a), dry_run=True)
+        for thing in THINGS:
+            w = Worker(thing)
+            for a in sys.argv[1:]:
+                w.cycle(now=ts(a), dry_run=True)
         return
-    w = None
+    workers = {}
     while True:
         start = time.time()
-        try:
-            w = w or Worker()
-            w.cycle()
-        except Exception as e:  # noqa: BLE001 - keep running; next cycle retries
-            print(f"[error] {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        for thing in THINGS:  # one robot failing (offline, not provisioned) must not stop the others
+            try:
+                workers[thing] = workers.get(thing) or Worker(thing)
+                workers[thing].cycle()
+            except Exception as e:  # noqa: BLE001 - keep running; next cycle retries
+                print(f"[error] {thing}: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
         time.sleep(max(5.0, PERIOD - (time.time() - start)))
 
 

@@ -4,7 +4,8 @@
 Robot::read_once() loop (~1 kHz) -> phm/raw/<thing>/joint1..7   batched samples (InfluxDB via Telegraf)
                                  -> phm/state/<thing>            Ditto merge patch at --state-hz
 Backends: --backend pylibfranka (FR3, system >= 5, libfranka >= 0.15), panda_py (Panda, system 4.x,
-libfranka 0.9.x build of panda-py), fake (synthetic RobotState for offline end-to-end tests).
+libfranka 0.9.x build of panda-py), sim (MuJoCo Menagerie franka_emika_panda via mujoco_sim.py),
+fake (synthetic RobotState without dependencies, for offline end-to-end tests).
 Topic/payload contract: stack/README.md. FCI must be activated in Desk; only one FCI client at a time.
 """
 import argparse, json, math, os, threading, time
@@ -17,6 +18,8 @@ def open_robot(a):
     """Return an object with read_once() -> RobotState, plus a version string for the log."""
     if a.backend == "fake":
         return FakeRobot(a.fake_drop), "fake"
+    if a.backend == "sim":
+        return SimRobot(a), "sim"
     if a.backend == "pylibfranka":
         import pylibfranka as lf
     else:
@@ -81,6 +84,33 @@ class FakeRobot:
             robot_mode=SimpleNamespace(name="Idle"), control_command_success_rate=0.0)
 
 
+class SimRobot:
+    """Menagerie franka_emika_panda physics at 1 kHz, returned in RobotState shape (no temperatures, like FCI)."""
+    TAU_RATED = (87,) * 4 + (12,) * 3  # Panda joint torque limits [N*m]
+    K_JOINT = 2.0e4                    # transmission stiffness [N*m/rad]: theta - q = tau_J / K
+
+    def __init__(self, a):
+        from mujoco_sim import ArmSim, parse_wear
+        self.sim = ArmSim(os.path.join(a.menagerie, "franka_emika_panda", "panda.xml"), JOINTS, self.TAU_RATED,
+                          wear=parse_wear(a.sim_wear))
+        self.ms, self.next_t = 0, time.monotonic()
+        self.errs = SimpleNamespace(**{f: False for f in FakeRobot.ERR_FIELDS})
+
+    def read_once(self):
+        self.next_t += 0.001
+        time.sleep(max(0.0, self.next_t - time.monotonic()))
+        self.next_t = max(self.next_t, time.monotonic() - 0.05)  # do not burst after a stall
+        s = self.sim
+        s.step(0.001)
+        self.ms += 1
+        q, tau = s.q(), s.tau()
+        return SimpleNamespace(
+            time=SimpleNamespace(to_msec=lambda ms=self.ms: ms), q=q, dq=s.dq(), tau_J=tau,
+            theta=q + tau / self.K_JOINT, tau_ext_hat_filtered=s.rng.normal(0, 0.05, 7),
+            joint_collision=[0.0] * 7, joint_contact=[0.0] * 7, current_errors=self.errs,
+            robot_mode=SimpleNamespace(name="Move"), control_command_success_rate=0.0)
+
+
 class Adapter:
     def __init__(self, a):
         self.a, self.lock = a, threading.Lock()
@@ -88,6 +118,7 @@ class Adapter:
         self.latest = None                   # (per-joint tuples, mode, error names)
         self.n_msgs, self.n_lost, self.n_dup, self.last_ms = 0, 0, 0, None
         self.error = None                    # exception that stopped the reader thread
+        self.stop = False
         self.mqtt = None if a.dry_run else self._mqtt()
 
     def _mqtt(self):
@@ -129,7 +160,7 @@ class Adapter:
 
     def reader(self, robot):
         try:
-            while True:
+            while not self.stop:
                 self.on_state(robot.read_once())
         except Exception as e:  # network loss, robot reboot, FCI deactivated
             self.error = e
@@ -168,7 +199,8 @@ class Adapter:
     def run(self):
         robot, ver = open_robot(self.a)
         print(f"[info] backend={self.a.backend} robot={self.a.robot_ip} server_version={ver}", flush=True)
-        threading.Thread(target=self.reader, args=(robot,), daemon=True).start()
+        th = threading.Thread(target=self.reader, args=(robot,), daemon=True)
+        th.start()
         t0 = last_stat = time.time()
         next_state = t0
         n_prev = lost_prev = 0
@@ -189,12 +221,14 @@ class Adapter:
             if self.error is not None:
                 self.flush_raw()
                 raise SystemExit(f"reader stopped: {self.error!r}")  # systemd restarts the adapter
+        self.stop = True
+        th.join(1)  # the sim backend must not step MuJoCo while the interpreter shuts down
         self.flush_raw()
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--backend", choices=("pylibfranka", "panda_py", "fake"), default="pylibfranka")
+    p.add_argument("--backend", choices=("pylibfranka", "panda_py", "sim", "fake"), default="pylibfranka")
     p.add_argument("--robot-ip", default="172.16.0.2", help="Franka control unit (FCI) address")
     p.add_argument("--thing", default="lab.robots:panda-001")
     p.add_argument("--mqtt-host", default="127.0.0.1")
@@ -203,6 +237,10 @@ if __name__ == "__main__":
     p.add_argument("--raw-batch-ms", type=int, default=200)
     p.add_argument("--state-hz", type=float, default=5)
     p.add_argument("--duration", type=float, default=None, help="seconds; default run forever")
+    p.add_argument("--menagerie", default=os.environ.get("MENAGERIE_DIR", os.path.expanduser("~/mujoco_menagerie")),
+                   help="sim backend: mujoco_menagerie checkout")
+    p.add_argument("--sim-wear", nargs="*", metavar="JOINT=RATE",
+                   help="sim backend: added damping and friction per hour, e.g. joint4=2")
     p.add_argument("--fake-drop", type=float, default=0.0, help="fake backend: packet drop ratio")
     p.add_argument("--dry-run", action="store_true", help="print instead of publishing to MQTT")
     Adapter(p.parse_args()).run()

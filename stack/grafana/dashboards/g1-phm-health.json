@@ -1,9 +1,8 @@
 {
   "uid": "phm-g1-health",
-  "title": "G1 PHM Health",
+  "title": "PHM Health per Robot",
   "tags": [
-    "phm",
-    "g1"
+    "phm"
   ],
   "timezone": "browser",
   "schemaVersion": 39,

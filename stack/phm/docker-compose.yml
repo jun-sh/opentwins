@@ -12,7 +12,7 @@ services:
       DITTO_USER: ${DITTO_USER:-admin}
       DITTO_USER_PASSWORD: ${DITTO_USER_PASSWORD:?run scripts/init-env.sh}
       INFLUX_TOKEN: ${INFLUX_TOKEN:?run scripts/init-env.sh}
-      PHM_THING_ID: lab.robots:g1-001
+      PHM_THING_IDS: lab.robots:g1-001,lab.robots:panda-001,lab.robots:piperx-001
       PHM_PERIOD_S: "120"
       PHM_DEFAULT_MAX_TEMP: "80"   # placeholder: Unitree G1 joint limit not confirmed
     networks: [phm]
