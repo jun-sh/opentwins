@@ -10,7 +10,7 @@ All components are unmodified upstream images; this directory only holds configu
 | nginx | nginx 1.30.7 | `127.0.0.1:18080` | Ditto API/UI (`/api`, `/ui/`) + Type library (`/models/`) |
 | influxdb | influxdb 2.10.1 | `127.0.0.1:18086` | raw high-rate history (bucket `raw`) |
 | telegraf | telegraf 1.40.3 | — | MQTT → InfluxDB, memory buffer |
-| grafana | grafana 12.4.9 | `127.0.0.1:13000` | dashboards (folder *PHM*) |
+| grafana | grafana 12.4.15 | `127.0.0.1:13000` | dashboards (folder *PHM*) |
 | phm-worker (project `phm-analytics`) | built from `phm/` (python 3.11, progpy 1.9.0, pyod 3.6.9) | — | P3 PHM assessment every 120 s → Ditto `phm` |
 
 ## Run

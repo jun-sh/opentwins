@@ -154,7 +154,7 @@ services:
 
   # ---------------------------------------------------------------- visualisation
   grafana:
-    image: docker.io/grafana/grafana:12.4.9
+    image: docker.io/grafana/grafana:12.4.15
     restart: unless-stopped
     ports:
       - "${PHM_BIND:-127.0.0.1}:${PHM_GRAFANA_PORT:-13000}:3000"
