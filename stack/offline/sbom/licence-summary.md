@@ -12,7 +12,8 @@ classification for audit triage, not a legal opinion. Non-permissive rows: `lice
 | Eclipse Mosquitto 2.1 | `library/eclipse-mosquitto:2.1.4-alpine` | EPL-2.0 OR EDL-1.0 (BSD-3-Clause) | permissive (EDL option) | yes |  |
 | nginx 1.30 | `library/nginx:1.30.7-alpine` | BSD-2-Clause | permissive | yes |  |
 | InfluxDB OSS 2.10 | `library/influxdb:2.10.1-alpine` | MIT | permissive | yes |  |
-| Grafana OSS 12.4 | `grafana/grafana:12.4.9` | AGPL-3.0-only | network-copyleft | yes | **FLAG** AGPL (known, legal review pending). Used unmodified |
+| Telegraf 1.40 | `library/telegraf:1.40.3-alpine` | MIT | permissive | yes |  |
+| Grafana OSS 12.4 | `grafana/grafana:12.4.15` | AGPL-3.0-only | network-copyleft | yes | **FLAG** AGPL (known, legal review pending). Used unmodified |
 | Python 3.11 + Debian 12 base | `library/python:3.11-slim-bookworm` | PSF-2.0; Debian packages mixed (GPL/LGPL/BSD/MIT) | mixed | yes | GPL system packages are unmodified OS components |
 | ProgPy 1.9.0 | `phm-worker (pip progpy)` | NASA-1.3 (NOSA) | non-osi/special | yes (OSI) / not FSF-free | **FLAG** NOSA (known, legal review pending): redistribution and modification terms differ from common OSS |
 | PyOD 3.6.9 | `phm-worker (pip pyod)` | BSD-2-Clause | permissive | yes |  |
@@ -28,7 +29,7 @@ classification for audit triage, not a legal opinion. Non-permissive rows: `lice
 | `eclipse/ditto-things-search:3.9.9` | 34 | 4 | 76 | 115 | 0 | 0 |
 | `eclipse/ditto-things:3.9.9` | 36 | 4 | 76 | 115 | 0 | 0 |
 | `eclipse/ditto-ui:3.9.9` | 43 | 6 | 12 | 10 | 0 | 0 |
-| `grafana/grafana:12.4.9` | 18 | 5 | 11 | 557 | 0 | 0 |
+| `grafana/grafana:12.4.15` | 18 | 5 | 11 | 554 | 0 | 0 |
 | `library/eclipse-mosquitto:2.1.4-alpine` | 16 | 9 | 9 | 1 | 0 | 0 |
 | `library/influxdb:2.10.1-alpine` | 23 | 10 | 30 | 279 | 0 | 0 |
 | `library/mongo:7.0.48` | 12 | 3 | 46 | 103 | 0 | 1 |
