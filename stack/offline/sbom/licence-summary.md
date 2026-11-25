@@ -36,6 +36,7 @@ classification for audit triage, not a legal opinion. Non-permissive rows: `lice
 | `library/nginx:1.30.7-alpine` | 42 | 6 | 12 | 11 | 0 | 0 |
 | `library/python:3.11-slim-bookworm` | 26 | 2 | 70 | 37 | 0 | 0 |
 | `library/telegraf:1.40.3-alpine` | 18 | 3 | 21 | 549 | 0 | 0 |
+| `phm-ditto-ui:3.9.9-apk-offline` | 43 | 6 | 12 | 10 | 0 | 0 |
 | `phm-worker:0.1-offline` | 50 | 3 | 70 | 39 | 0 | 1 |
 
 `unknown` is mostly Go modules and Java jars whose licence Syft cannot read from the binary/jar
