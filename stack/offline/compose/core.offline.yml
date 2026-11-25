@@ -8,7 +8,7 @@ services:
   things-search: { pull_policy: never }
   connectivity: { pull_policy: never }
   gateway: { pull_policy: never }
-  ditto-ui: { pull_policy: never }
+  ditto-ui: { image: "phm-ditto-ui:3.9.9-apk-offline", pull_policy: never }
   nginx: { pull_policy: never }
   influxdb: { pull_policy: never }
   telegraf: { pull_policy: never }

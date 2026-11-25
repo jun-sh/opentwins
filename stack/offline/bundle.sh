@@ -16,6 +16,7 @@ PY_BASE=docker.io/library/python:3.11-slim-bookworm
 # custom image name -> offline tag used by offline/compose/*.offline.yml
 declare -A CUSTOM_TAG=(
   [phm-worker]=phm-worker:0.1-offline
+  [phm-ditto-ui]=phm-ditto-ui:3.9.9-apk-offline
 )
 log() { printf '[bundle] %s\n' "$*" >&2; }
 die() { printf '[bundle] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -29,6 +30,7 @@ compose_images() {
       docker-compose --env-file /dev/null -f "$(basename "$f")" config --images 2>/dev/null)
   done
   grep -h '^FROM ' "$STACK"/phm/Dockerfile | awk '{print $2}'
+  grep -h '^ARG BASE=' "$STACK"/ditto-ui/Dockerfile | cut -d= -f2
 }
 upstream_refs() { compose_images | grep '^docker\.io/' | sort -u; }
 
@@ -138,6 +140,12 @@ build_custom() { # offline builds: no network inside the build
     docker build -q --network none --build-arg "BASE=$PY_BASE" -f "$HERE/docker/$img.Dockerfile" \
       -t "${CUSTOM_TAG[$img]}" "$c/$img" >/dev/null
   done
+  # ditto-ui: upstream UI + `apk upgrade` (CVE fix) needs the Alpine mirror, so it is built online from the
+  # locked base digest; the bundle ships the resulting image (install.sh --rebuild does not rebuild it).
+  local ui_base; ui_base=$(grep -h '^ARG BASE=' "$STACK"/ditto-ui/Dockerfile | cut -d= -f2)
+  log "docker build (online, apk) ${CUSTOM_TAG[phm-ditto-ui]}"
+  docker build -q --pull=false --build-arg "BASE=$(lock_value "$ui_base")" -t "${CUSTOM_TAG[phm-ditto-ui]}" \
+    "$STACK/ditto-ui" >/dev/null
   rm -rf "$c"
 }
 

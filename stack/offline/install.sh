@@ -7,6 +7,7 @@
 # Grafana  7 provision.sh  8 smoke-test.sh.
 # --rebuild: rebuild the custom PHM worker image from the vendored wheels with `docker build --network none`
 # instead of using the prebuilt ones (proves the source -> image path works offline).
+#   (the patched ditto-ui image is not rebuilt: its `apk upgrade` needs an Alpine mirror; the bundled image is used)
 set -euo pipefail
 B=$(cd "$(dirname "$0")" && pwd)
 TARGET=$PWD/opentwins; SMOKE=1; REBUILD=0; ENVS=()

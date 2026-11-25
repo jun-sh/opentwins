@@ -94,7 +94,12 @@ services:
       DEVOPS_PASSWORD: ${DITTO_DEVOPS_PASSWORD:?run scripts/init-env.sh}
 
   ditto-ui:
-    image: docker.io/eclipse/ditto-ui:${DITTO_VERSION:-3.9.9}
+    # upstream UI with upgraded Alpine packages (CVE fix); see ditto-ui/Dockerfile
+    build:
+      context: ./ditto-ui
+      args:
+        BASE: docker.io/eclipse/ditto-ui:${DITTO_VERSION:-3.9.9}
+    image: phm-ditto-ui:${DITTO_VERSION:-3.9.9}-apk
     restart: unless-stopped
 
   # Ditto reverse proxy (basic auth -> pre-authenticated subject "nginx:<user>")
