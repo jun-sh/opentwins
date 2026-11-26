@@ -51,8 +51,7 @@ G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab
 - `stack/adapters/mujoco_sim.py`（84 行）：Menagerie MJCF 在自带位置伺服下跑平滑往复轨迹（关闭 PiPER 模型的重力补偿，让驱动承担重力），实时步进；一阶热模型（绕组/驱动器温升 ∝ 扭矩²）、传感器噪声；`--sim-wear JOINT=RATE` 每小时增加阻尼和摩擦，用来给 PHM 制造可检测的退化。Panda 仿真按 FCI 实际情况不输出温度。
 - Menagerie 稀疏克隆在 `~/models/mujoco_menagerie`（只含 `franka_emika_panda`、`agilex_piper`，提交 eea4c74），不进仓库。宿主机 Python 已有 mujoco 3.11.0、paho 1.5.1。
 - 验证：Panda 仿真 990–1000 Hz、丢包 0；PiperX 新帧 184–194 Hz；PHM worker 每轮三台机器人（G1 74 s 含重拟合，Panda 0.4 s，PiperX 0.2 s）；Fleet 面板和单机面板全部查询有数据、无错误。
-- **当前两个仿真适配器是本会话启动的后台进程（`nohup`），重启即消失**；常驻需安装用户服务（自动模式拒绝了这一步，等用户决定）：
-  `install -m600 /dev/null ~/.config/phm-sim/env` 后写入 `OPENTWINS_STACK=<repo>/stack`、`MENAGERIE_DIR=~/models/mujoco_menagerie`、`MQTT_EDGE_PASSWORD=...`；`cp stack/adapters/systemd/{panda,piperx}-sim-adapter.service ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now panda-sim-adapter piperx-sim-adapter`（先 `pkill -f 'backend sim'`）。
+- **两个仿真适配器已作为 DGX 用户服务常驻（2026-11-26）**：`panda-sim-adapter`、`piperx-sim-adapter`（已 enable，linger 已开，开机自启；`Restart=always`），`systemctl --user status|restart|stop <名>`，日志 `journalctl --user -u <名>`。环境文件 `~/.config/phm-sim/env`（权限 600：`OPENTWINS_STACK`、`MENAGERIE_DIR=~/models/mujoco_menagerie`、`MQTT_EDGE_PASSWORD`）；单元文件改了要重新 `cp stack/adapters/systemd/*-sim-adapter.service ~/.config/systemd/user/ && systemctl --user daemon-reload`。切换后实测 Panda 991 Hz 0 丢包、PiperX 198 Hz，InfluxDB 和 Ditto 均有新数据。注意：仿真磨损按运行时长累积，服务每次重启 PiperX joint2 磨损从 0 重新开始；接真机前先 `disable --now` 对应仿真服务，避免两个来源写同一个孪生。
 - PiPER 单元对 `joint2` 注入磨损 0.5/小时（阻尼 N·m·s/rad 与摩擦 N·m），重启适配器即复位；预计数小时后 `joint2` 扭矩/温度上升、ECOD 打分升高。
 - 坑：`stack/.env` 含 `COMPOSE_PROJECT_NAME=phm`，在 `stack/phm` 里用 `--env-file ../.env` 会把 worker 建进 `phm` 项目；必须 `docker-compose -p phm-analytics --env-file ../.env up -d --build`。
 
