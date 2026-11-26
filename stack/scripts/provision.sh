@@ -38,3 +38,17 @@ for f in things/*_*.json; do
     put "$BASE/api/2/things/$id" "$DITTO_USER:$DITTO_USER_PASSWORD" "$f"
   fi
 done
+
+echo "influxdb:"  # bucket phm_agg (no expiry) + task phm-downsample-30s (created, or its flux updated)
+IFX="http://127.0.0.1:${PHM_INFLUX_PORT:-18086}/api/v2"
+ifx() { curl -fsS -H "Authorization: Token $INFLUX_TOKEN" -H 'Content-Type: application/json' "$@"; }
+org=$(ifx "$IFX/orgs?org=phm" | jq -r '.orgs[0].id')
+if ! ifx -o /dev/null "$IFX/buckets?orgID=$org&name=phm_agg" 2>/dev/null; then  # 404 when missing
+  ifx -X POST "$IFX/buckets" -d "{\"orgID\":\"$org\",\"name\":\"phm_agg\",\"retentionRules\":[]}" >/dev/null
+fi
+echo "  bucket phm_agg"
+flux=$(jq -Rs . < influx/downsample-30s.flux)
+task=$(ifx "$IFX/tasks?orgID=$org&name=phm-downsample-30s" | jq -r '.tasks[0].id // empty')
+if [ -n "$task" ]; then ifx -X PATCH "$IFX/tasks/$task" -d "{\"flux\":$flux}" >/dev/null
+else ifx -X POST "$IFX/tasks" -d "{\"orgID\":\"$org\",\"flux\":$flux}" >/dev/null; fi
+echo "  task phm-downsample-30s"

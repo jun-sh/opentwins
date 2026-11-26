@@ -1,9 +1,11 @@
 """PHM worker (P3): InfluxDB history -> ProgPy thermal RUL + PyOD anomaly score -> Ditto `phm` group.
 
 Every PHM_PERIOD_S, for every joint Feature (`*_joint` or `jointN`) of each Thing in PHM_THING_IDS:
-  * reads 30 s aggregates (temperatures, torque mean/min/max, velocity, faultCode) from InfluxDB
+  * reads 30 s aggregates (temperatures, torque mean/min/max, velocity, faultCode) from InfluxDB `phm_agg`
   * anomalyScore = PyOD ECOD score of the last PHM_ASSESS_S, relative to the fitted threshold
-    (fit on the rest of the PHM_HISTORY_S window; 1.0 = at the 'contamination' threshold)
+    (1.0 = at the 'contamination' threshold), fit on the rest of the PHM_HISTORY_S window; for Things in
+    PHM_FIXED_BASELINE (repetitive duty cycle) on a fixed known-good period instead (InfluxDB `phm_baseline`,
+    so slow wear is not learnt away). Raised after 2 cycles over the limit, cleared below PHM_CLEAR_RATIO x limit
   * rulHours = ProgPy JointThermal time to configuration.maxTemperature at the recent mean load
     (-1 = not estimated: no fresh data, or the robot reports no joint temperatures, e.g. Franka FCI)
   * healthIndex = min(thermal margin (ProgPy event_state), anomaly factor); condition by thresholds
@@ -34,6 +36,7 @@ DITTO_AUTH = (E.get("DITTO_USER", "admin"), E["DITTO_USER_PASSWORD"])
 INFLUX = E.get("INFLUX_URL", "http://influxdb:8086").rstrip("/")
 INFLUX_HDR = {"Authorization": f"Token {E['INFLUX_TOKEN']}"}
 BUCKET, ORG = E.get("INFLUX_BUCKET", "raw"), E.get("INFLUX_ORG", "phm")
+AGG = E.get("PHM_AGG_BUCKET", "phm_agg")
 PERIOD = float(E.get("PHM_PERIOD_S", 120))
 HISTORY = int(E.get("PHM_HISTORY_S", 6 * 3600))
 ASSESS = int(E.get("PHM_ASSESS_S", 300))
@@ -44,28 +47,24 @@ HORIZON_H = float(E.get("PHM_RUL_HORIZON_H", 24))
 # condition thresholds: (anomalyScore, rulHours) for watch / alert
 WATCH = (float(E.get("PHM_WATCH_SCORE", 1.0)), float(E.get("PHM_WATCH_RUL_H", 8)))
 ALERT = (float(E.get("PHM_ALERT_SCORE", 2.0)), float(E.get("PHM_ALERT_RUL_H", 1)))
+FIXED = {t.strip() for t in E.get("PHM_FIXED_BASELINE", "").split(",") if t.strip()}
+BASELINE_S = int(E.get("PHM_BASELINE_S", 2 * 3600))
+CLEAR = float(E.get("PHM_CLEAR_RATIO", 0.8))
 MODEL_REF = "phm-worker/0.1 progpy-JointThermal+pyod-ECOD"
 # min/max/mean only: they are pushed down to the storage engine (stddev is not and times out at 1 kHz)
 FIELDS = ["windingTemperature", "driverTemperature", "torque", "velocity", "torqueMin", "torqueMax", "faultCode"]
 LEVEL = {"normal": 0, "watch": 1, "alert": 2, "fault": 3}
 
-FLUX = """
-src = (fld, fn, as) => from(bucket: "{b}") |> range(start: {start}, stop: {stop})
-  |> filter(fn: (r) => r._measurement == "telemetry" and r.thing_id == "{t}" and r.feature_id =~ /(_joint|^joint[0-9]+)$/ and r._field == fld)
-  |> aggregateWindow(every: 30s, fn: fn, createEmpty: false) |> set(key: "_field", value: as)
-"""
-# One from() per stream: a source shared by several branches is not pushed down to storage.
-FLUX += "union(tables: [" + ", ".join(f'src(fld: "{f}", fn: {fn}, as: "{a}")' for f, fn, a in [
-    ("windingTemperature", "mean", "windingTemperature"), ("driverTemperature", "mean", "driverTemperature"),
-    ("torque", "mean", "torque"), ("velocity", "mean", "velocity"), ("torque", "min", "torqueMin"),
-    ("torque", "max", "torqueMax"), ("faultCode", "max", "faultCode")]).replace("{", "{{").replace("}", "}}") + """])
+# 30 s aggregates written by the InfluxDB task phm-downsample-30s (stack/influx/downsample-30s.flux)
+FLUX = """from(bucket: "{b}") |> range(start: {start}, stop: {stop})
+  |> filter(fn: (r) => r._measurement == "telemetry_30s" and r.thing_id == "{t}")
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
   |> keep(columns: ["_time", "feature_id", {cols}])
 """
 
 
 def flux(query):
-    r = requests.post(f"{INFLUX}/api/v2/query", params={"org": ORG}, data=query, timeout=60,
+    r = requests.post(f"{INFLUX}/api/v2/query", params={"org": ORG}, data=query, timeout=300,
                       headers={**INFLUX_HDR, "Content-Type": "application/vnd.flux", "Accept": "application/csv"})
     r.raise_for_status()
     rows = []
@@ -83,10 +82,11 @@ def iso(t):
     return datetime.fromtimestamp(t, timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def load_history(thing, now):
+def load_history(thing, now, start=None):
     cols = ", ".join(f'"{c}"' for c in FIELDS)
     per = {}
-    for row in flux(FLUX.format(b=BUCKET, start=iso(now - HISTORY), stop=iso(now + 1), t=thing, cols=cols)):
+    start = now - HISTORY if start is None else start
+    for row in flux(FLUX.format(b=AGG, start=iso(start), stop=iso(now + 1), t=thing, cols=cols)):
         f = row.get("feature_id")
         if not f or row.get("_time") in (None, "_time"):
             continue
@@ -112,16 +112,19 @@ def ditto(thing, method, path, **kw):
     return r
 
 
-def anomaly_score(t, x, now):
-    """ECOD fitted on history before the assessment window; mean score of the window / threshold."""
+def anomaly_score(t, x, now, det=None):
+    """Mean ECOD score of the assessment window / threshold. det: detector fitted on a fixed baseline;
+    None = fit on the history before the window (sliding baseline)."""
     x = x[:, ~np.isnan(x).all(axis=0)]  # drop signals this robot does not report (e.g. temperatures)
     ok = ~np.isnan(x).any(axis=1)
     t, x = t[ok], x[ok]
     recent = t >= now - ASSESS
-    train = x[~recent]
-    if recent.sum() == 0 or len(train) < 60:
+    if det is None:
+        if recent.sum() == 0 or (~recent).sum() < 60:
+            return None
+        det = ECOD(contamination=0.01).fit(x[~recent])
+    elif recent.sum() == 0 or det.ncols != x.shape[1]:
         return None
-    det = ECOD(contamination=0.01).fit(train)
     thr = max(float(det.threshold_), 1e-9)
     return max(0.0, float(np.mean(det.decision_function(x[recent]))) / thr)
 
@@ -129,8 +132,37 @@ def anomaly_score(t, x, now):
 class Worker:
     def __init__(self, thing):
         self.thing = thing
-        self.models, self.fitted_at, self.cond, self.frames = {}, {}, {}, {}
+        self.models, self.fitted_at, self.cond, self.frames, self.prev, self.det = {}, {}, {}, {}, {}, None
         self.restore_frames()
+
+    def baseline(self, now, dry_run):
+        """Per-joint ECOD fitted once on [from, from + PHM_BASELINE_S] ({} until that has passed)."""
+        if self.det is not None:
+            return self.det
+        q = (f'from(bucket: "{BUCKET}") |> range(start: 0) |> filter(fn: (r) => r._measurement == "phm_baseline"'
+             f' and r.thing_id == "{self.thing}" and r._field == "from") |> last()')
+        rows = [r for r in flux(q) if r.get("_value") not in (None, "", "_value")]
+        b0 = float(rows[0]["_value"]) if rows else None
+        if b0 is None:  # first telemetry of this robot, skipping one minute of start-up
+            q = (f'from(bucket: "{AGG}") |> range(start: 0) |> filter(fn: (r) => r._measurement == "telemetry_30s"'
+                 f' and r.thing_id == "{self.thing}" and r._field == "torque") |> first() |> group() |> min(column: "_time")')
+            first = [r["_time"] for r in flux(q) if r.get("_time") not in (None, "", "_time")]
+            if not first:
+                return {}
+            b0 = ts(first[0]) + 60
+            if not dry_run:
+                influx_write([f"phm_baseline,thing_id={tag(self.thing)} from={b0} {int(now)}"])
+        if now < b0 + BASELINE_S + ASSESS:
+            return {}
+        det = {}
+        for f, (t, x) in load_history(self.thing, b0 + BASELINE_S, start=b0).items():
+            x = x[:, :6][:, ~np.isnan(x[:, :6]).all(axis=0)]; x = x[~np.isnan(x).any(axis=1)]  # as anomaly_score
+            if len(x) >= 60:
+                det[f] = ECOD(contamination=0.01).fit(x)
+                det[f].ncols = x.shape[1]
+        print(f"[baseline] {self.thing}: {iso(b0)} + {BASELINE_S} s, {len(det)} joints")
+        self.det = det or None  # nothing to fit (no aggregates there yet): look again next cycle
+        return det
 
     def restore_frames(self):
         """Reopen Event Frames whose last record is a start (survives restarts)."""
@@ -161,14 +193,16 @@ class Worker:
         margin = float(m.event_state({"t": t_now})["overheat"])
         return t_now, time_to_overheat_h(m, t_now, u, HORIZON_H), margin
 
-    def classify(self, score, rul, fault, t_now, tmax):
+    def classify(self, score, prev, rul, fault, t_now, tmax, old):
         if fault or t_now >= tmax:
             return "fault", "faultCode" if fault else "temperature >= maxTemperature"
         for name, (s_lim, r_lim) in (("alert", ALERT), ("watch", WATCH)):
             if 0 <= rul < r_lim:
                 return name, f"rulHours {rul:.2f} < {r_lim}"
-            if score is not None and score >= s_lim:
+            if score is not None and min(score, prev or 0.0) >= s_lim:  # raise: 2 cycles over the limit
                 return name, f"anomalyScore {score:.2f} >= {s_lim}"
+            if score is not None and LEVEL[old] >= LEVEL[name] and score >= CLEAR * s_lim:  # hold
+                return name, f"anomalyScore {score:.2f} >= {CLEAR} x {s_lim}"
         return "normal", ""
 
     def event_frame(self, f, old, new, reason, now, lines):
@@ -188,7 +222,8 @@ class Worker:
         """One assessment as of `now` (default: wall clock). dry_run prints instead of writing."""
         started, now = time.time(), now or time.time()
         feats = ditto(self.thing, "GET", "/features").json()
-        hist = load_history(self.thing, now)
+        det = self.baseline(now, dry_run) if self.thing in FIXED else None  # then only the thermal fit's 2 h:
+        hist = load_history(self.thing, now, start=None if det is None else now - 2 * 3600 - ASSESS)
         patch, lines, stale = {}, [], []
         stamp = iso(now)
         for f in sorted(k for k in feats if JOINT_RE.search(k)):
@@ -204,9 +239,14 @@ class Worker:
             tmax = feats[f].get("properties", {}).get("configuration", {}).get("maxTemperature", DEFAULT_TMAX)
             fault = bool(np.nanmax(x[t >= now - ASSESS, 6], initial=0) > 0)
             t_now, rul, margin = self.thermal(f, t, x, tmax)
-            score = anomaly_score(t, x[:, :6], now)
+            if det is not None and f not in det:
+                score = None  # fixed baseline not available yet (reference period still running)
+            else:
+                score = anomaly_score(t, x[:, :6], now, det[f] if det is not None else None)
             hi = min(margin, 1.0 - min(1.0, max(0.0, (score or 0.0) - 1.0) / 2.0))
-            cond, reason = self.classify(score, rul, fault, t_now, tmax)
+            old = self.cond.get(f, "normal")
+            cond, reason = self.classify(score, self.prev.get(f), rul, fault, t_now, tmax, old)
+            self.prev[f] = score
             phm = {"healthIndex": round(hi, 4), "anomalyScore": round(score or 0.0, 4),
                    "rulHours": round(rul, 3), "condition": cond, "lastAssessedAt": stamp, "modelRef": MODEL_REF}
             patch[f] = {"properties": {"phm": phm}}
@@ -214,7 +254,6 @@ class Worker:
             lines.append(f"phm,thing_id={tag(self.thing)},feature_id={tag(f)} healthIndex={phm['healthIndex']},"
                          f"anomalyScore={phm['anomalyScore']},rulHours={phm['rulHours']},"
                          f"conditionLevel={LEVEL[cond]}i,condition=\"{cond}\"{temp} {int(now)}")
-            old = self.cond.get(f, "normal")
             if cond != old and dry_run:
                 print(f"  [frame] {f}: {old} -> {cond} ({reason})")
             elif cond != old:

@@ -92,7 +92,7 @@ class SimRobot:
     def __init__(self, a):
         from mujoco_sim import ArmSim, parse_wear
         self.sim = ArmSim(os.path.join(a.menagerie, "franka_emika_panda", "panda.xml"), JOINTS, self.TAU_RATED,
-                          wear=parse_wear(a.sim_wear))
+                          wear=parse_wear(a.sim_wear), wear_cycle_h=a.sim_wear_cycle_h)
         self.ms, self.next_t = 0, time.monotonic()
         self.errs = SimpleNamespace(**{f: False for f in FakeRobot.ERR_FIELDS})
 
@@ -241,6 +241,8 @@ if __name__ == "__main__":
                    help="sim backend: mujoco_menagerie checkout")
     p.add_argument("--sim-wear", nargs="*", metavar="JOINT=RATE",
                    help="sim backend: added damping and friction per hour, e.g. joint4=2")
+    p.add_argument("--sim-wear-cycle-h", type=float, default=0.0,
+                   help="sim: wear restarts every N h of UTC wall clock (survives restarts); 0 = since start")
     p.add_argument("--fake-drop", type=float, default=0.0, help="fake backend: packet drop ratio")
     p.add_argument("--dry-run", action="store_true", help="print instead of publishing to MQTT")
     Adapter(p.parse_args()).run()

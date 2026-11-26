@@ -3,8 +3,8 @@
 ## 数据流
 
 ```
-InfluxDB raw/telemetry ──(Flux, 30 s 聚合, 6 h 窗口)──▶ phm-worker（每 120 s）
-   ├─ PyOD ECOD   → anomalyScore（最近 5 min 平均分 / 训练阈值；1 = 1% 污染率阈值）
+InfluxDB raw/telemetry ──(任务 phm-downsample-30s, 每分钟)──▶ phm_agg/telemetry_30s ──(6 h 窗口)──▶ phm-worker（每 120 s）
+   ├─ PyOD ECOD   → anomalyScore（最近 5 min 平均分 / 训练阈值；1 = 1% 污染率阈值；训练集：滑动 6 h，或固定健康基线）
    ├─ ProgPy JointThermal → rulHours（到 maxTemperature 的时间，上限 24 h）+ 热裕度
    ├─ healthIndex = min(热裕度, 1 − max(0, anomalyScore−1)/2)
    └─ condition：fault（faultCode≠0 或 T≥Tmax）/ alert（RUL<1 h 或 score≥2）/ watch（RUL<8 h 或 score≥1）/ normal
@@ -34,9 +34,29 @@ InfluxDB raw/telemetry ──(Flux, 30 s 聚合, 6 h 窗口)──▶ phm-worker
 
 - **`maxTemperature` 未知**：G1 关节过温限值未查到宇树文档，worker 用占位 80 °C（`PHM_DEFAULT_MAX_TEMP`）。确认后写入孪生 `features/<joint>/properties/configuration/maxTemperature`，worker 自动优先使用。
 - 机器人多数时间静止，热模型拟合经常落在边界（tau=60 s、k=50），RUL 基本是上限 24 h；要有带载数据才有意义。
-- ECOD 训练集是最近 6 h 的同一关节数据，没有"健康基线"概念；机器人工况一变 anomalyScore 就会升高。
+- 滑动基线（G1）：训练集是最近 6 h，工况一变分数就升高，缓慢退化会被学进基线而检不出；固定基线只适合重复节拍的工况（见下节）。
+- ECOD 分数在远超基线的数据上饱和（PiperX joint2 约 1.2），到不了 alert 的 2.0：异常分数只回答"是否偏离"，严重程度看热裕度（`healthIndex`）和 `faultCode`。
 - Telegraf 只入库 20–30% 原始样本（见 HANDOFF §6），对 30 s 聚合影响不大。
 - **无新数据（离线）**：关节超过 10 min（`PHM_STALE_S`）没有数据时不评估，不崩溃也不写假值：Ditto 保留上一次的 `healthIndex/anomalyScore/condition`（`lastAssessedAt` 显示其时间），`rulHours` 改为 -1（TM 定义的"未估计"），InfluxDB `phm` 写 `condition="stale"`、`conditionLevel=-1`。TM 的 `condition` 枚举没有 `unknown`/`stale`，要在 Ditto 里显式表示需给 `monitored-component` TM 升版本加枚举值（核心改动，待决定）。
+
+## 检出验证（2026-11-26，PiperX 仿真磨损）
+
+- 场景：MuJoCo 仿真 PiperX，`--sim-wear joint2=0.5`（joint2 阻尼和摩擦每小时 +0.5），其余 5 个关节不加磨损作为对照。仿真从 2026-11-24 11:49 UTC 开始连续运行 47 h；joint2 绕组温度 52 → 91 °C。
+- 方法：用 worker 自身代码离线回放（只读），每 10 min 评估一次，统计首次报警时间和误报。脚本：会话临时目录 `replay_eval.py`（monkeypatch `classify` 收集结果，不进仓库）。
+
+| 配置 | joint2 首次 watch | 5 个对照关节误报 | joint2 事件数 | joint2 分数 p50 / max |
+|---|---|---|---|---|
+| 原版：滑动 6 h 基线、无防抖（线上 47 h 实际记录） | 无趋势，分数在 1.0 附近来回 | 0 | **82 次开关** | ~0.9 / 1.06 |
+| 滑动基线 + 防抖 | +7.3 h（压线，靠保持阈值 0.8 维持） | 0 | 1 | 0.84 / 1.02 |
+| **固定基线 + 防抖（已上线）** | **+3.5 h**（基线结束后 1.5 h；此时阻尼仅 +1.75） | **0** | 1，持续保持 | 1.17 / 1.22 |
+
+- 三种配置的 `fault` 都在 +14.5 h（仿真驱动器在绕组 > 70 °C 时置 `motor_overheating`）。热 RUL 没有提前量：稳态温度低于 `maxTemperature` 时一直是上限 24 h，超过后几小时内降到 0；`healthIndex`（热裕度）从 0.6 平滑降到 0，是最好的趋势指标。
+- 改动：`PHM_FIXED_BASELINE`（重复节拍的机器人：Panda、PiperX）用固定健康时段 `PHM_BASELINE_S`（2 h）训练 ECOD，起点取 InfluxDB `raw/phm_baseline` 最新一条（`from` = Unix 秒；缺失时取该机器人第一条聚合数据 + 60 s 并写入）。防抖：连续 2 个周期越线才升级，低于 `PHM_CLEAR_RATIO`（0.8）× 阈值才解除。G1 动作不固定，仍用滑动基线。
+- **维修 / 换件后重设基线**：写一条新的 `phm_baseline`（`from` = 维修后的健康时刻），然后重启 worker：
+  `printf 'phm_baseline,thing_id=lab.robots:piperx-001 from=%s %s\n' $(date +%s) $(date +%s) | curl -H "Authorization: Token $INFLUX_TOKEN" "http://127.0.0.1:18086/api/v2/write?org=phm&bucket=raw&precision=s" --data-binary @-`
+- 当前基线：PiperX 2026-11-24 11:51:15 UTC；Panda 2026-11-26 15:22:10 UTC（Panda 没有 11-24 的聚合数据；它没有磨损，任何时段都健康）。
+- 仿真磨损现在按 UTC 墙钟 24 h 周期（`--sim-wear-cycle-h 24`）：每天 00:00 UTC 归零（相当于检修），重启不清零；joint2 约 +3.5 h 进入 watch、约 +14.5 h fault，每天重复一次，可持续观察。
+- 未覆盖：真机数据；多种磨损形态（只有阻尼/摩擦线性增长）；Panda 的误报只在线上观察（回放时 Panda 只有 7 h 聚合数据）。
 
 ## Atlas CMMS 评估（未部署）
 

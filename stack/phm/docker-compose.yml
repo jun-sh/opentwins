@@ -14,6 +14,8 @@ services:
       INFLUX_TOKEN: ${INFLUX_TOKEN:?run scripts/init-env.sh}
       PHM_THING_IDS: lab.robots:g1-001,lab.robots:panda-001,lab.robots:piperx-001
       PHM_PERIOD_S: "120"
+      # repetitive duty cycle -> fixed known-good baseline (start: InfluxDB phm_baseline); G1 work varies, stays sliding
+      PHM_FIXED_BASELINE: lab.robots:panda-001,lab.robots:piperx-001
       PHM_DEFAULT_MAX_TEMP: "80"   # placeholder: Unitree G1 joint limit not confirmed
     networks: [phm]
     logging:

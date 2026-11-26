@@ -95,7 +95,7 @@ class SimPiper:
     def __init__(self, a):
         from mujoco_sim import ArmSim, parse_wear
         self.sim = ArmSim(os.path.join(a.menagerie, "agilex_piper", "piper.xml"), JOINTS, self.TAU_RATED,
-                          wear=parse_wear(a.sim_wear))
+                          wear=parse_wear(a.sim_wear), wear_cycle_h=a.sim_wear_cycle_h)
         self.t_sim, self.f = time.time(), None
         self._sync()
 
@@ -261,5 +261,7 @@ if __name__ == "__main__":
                     help="sim backend: mujoco_menagerie checkout")
     ap.add_argument("--sim-wear", nargs="*", metavar="JOINT=RATE",
                     help="sim backend: added damping and friction per hour, e.g. joint2=2")
+    ap.add_argument("--sim-wear-cycle-h", type=float, default=0.0,
+                    help="sim: wear restarts every N h of UTC wall clock (survives restarts); 0 = since start")
     ap.add_argument("--dry-run", action="store_true", help="print instead of publishing to MQTT")
     Adapter(ap.parse_args()).run()

@@ -3,10 +3,12 @@
 Joints follow a smooth periodic trajectory under the model's own position servos, so velocities and
 torques come from real rigid-body dynamics (gravity, inertia, damping). On top: a first-order thermal
 model per joint (winding and driver heat from torque^2), measurement noise, and optional wear
-injection (`wear={"joint3": 2.0}` adds that much damping and friction loss per hour of run time) so the
-PHM pipeline has something to detect. Only the adapter's SDK-shaped wrappers call this module.
+injection (`wear={"joint3": 2.0}` adds that much damping and friction loss per hour) so the PHM pipeline has
+something to detect. Wear hours count from process start, or with `wear_cycle_h` from the last multiple of
+that period on the wall clock (UTC), so a restart keeps the wear and each cycle ends in a 'repair'. Only the adapter's SDK-shaped wrappers call this module.
 """
 import math
+import time
 
 import mujoco
 import numpy as np
@@ -15,7 +17,7 @@ DT = 0.001  # physics step [s]
 
 
 class ArmSim:
-    def __init__(self, mjcf, joints, tau_rated, wear=None, seed=0, t_amb=25.0,
+    def __init__(self, mjcf, joints, tau_rated, wear=None, wear_cycle_h=0.0, seed=0, t_amb=25.0,
                  rise_w=60.0, rise_d=35.0, tc_w=300.0, tc_d=900.0):
         m = self.m = mujoco.MjModel.from_xml_path(mjcf)
         m.opt.timestep = DT
@@ -37,6 +39,7 @@ class ArmSim:
         self.base_damp = m.dof_damping[self.dof].copy()
         self.base_fric = m.dof_frictionloss[self.dof].copy()
         self.wear = {joints.index(k): v for k, v in (wear or {}).items()}
+        self.wear_cycle_h = wear_cycle_h
         self.tau_rated = np.asarray(tau_rated, float)
         self.t_amb, self.rise_w, self.rise_d, self.tc_w, self.tc_d = t_amb, rise_w, rise_d, tc_w, tc_d
         self.temp_w = np.full(len(jid), t_amb + 5.0)
@@ -46,7 +49,7 @@ class ArmSim:
     def step(self, dt):
         """Advance the physics and the thermal state by dt seconds (multiple of DT)."""
         m, d = self.m, self.d
-        hours = self.t / 3600
+        hours = (time.time() / 3600) % self.wear_cycle_h if self.wear_cycle_h > 0 else self.t / 3600
         for i, rate in self.wear.items():
             m.dof_damping[self.dof[i]] = self.base_damp[i] + rate * hours
             m.dof_frictionloss[self.dof[i]] = self.base_fric[i] + rate * hours
