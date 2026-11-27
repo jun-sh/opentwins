@@ -6,6 +6,8 @@ Every PHM_PERIOD_S, for every joint Feature (`*_joint` or `jointN`) of each Thin
     (1.0 = at the 'contamination' threshold), fit on the rest of the PHM_HISTORY_S window; for Things in
     PHM_FIXED_BASELINE (repetitive duty cycle) on a fixed known-good period instead (InfluxDB `phm_baseline`,
     so slow wear is not learnt away). Raised after 2 cycles over the limit, cleared below PHM_CLEAR_RATIO x limit
+  * driftSigma = largest shift of a recent median from that baseline in its sigmas (temperatures: rise only); not
+    bounded like ECOD (saturates near 1.2), so it grades severity: alert at PHM_ALERT_DRIFT; healthIndex falls with it
   * rulHours = ProgPy JointThermal time to configuration.maxTemperature at the recent mean load
     (-1 = not estimated: no fresh data, or the robot reports no joint temperatures, e.g. Franka FCI)
   * healthIndex = min(thermal margin (ProgPy event_state), anomaly factor); condition by thresholds
@@ -44,9 +46,9 @@ STALE = int(E.get("PHM_STALE_S", 600))
 REFIT = float(E.get("PHM_REFIT_S", 3600))
 DEFAULT_TMAX = float(E.get("PHM_DEFAULT_MAX_TEMP", 80))  # placeholder until Unitree's limit is confirmed
 HORIZON_H = float(E.get("PHM_RUL_HORIZON_H", 24))
-# condition thresholds: (anomalyScore, rulHours) for watch / alert
-WATCH = (float(E.get("PHM_WATCH_SCORE", 1.0)), float(E.get("PHM_WATCH_RUL_H", 8)))
-ALERT = (float(E.get("PHM_ALERT_SCORE", 2.0)), float(E.get("PHM_ALERT_RUL_H", 1)))
+# condition thresholds: (anomalyScore, rulHours, driftSigma) for watch / alert
+WATCH = tuple(float(E.get(f"PHM_WATCH_{k}", d)) for k, d in (("SCORE", 1.0), ("RUL_H", 8), ("DRIFT", "inf")))
+ALERT = tuple(float(E.get(f"PHM_ALERT_{k}", d)) for k, d in (("SCORE", 2.0), ("RUL_H", 1), ("DRIFT", 10)))
 FIXED = {t.strip() for t in E.get("PHM_FIXED_BASELINE", "").split(",") if t.strip()}
 BASELINE_S = int(E.get("PHM_BASELINE_S", 2 * 3600))
 CLEAR = float(E.get("PHM_CLEAR_RATIO", 0.8))
@@ -67,11 +69,8 @@ def flux(query):
     r = requests.post(f"{INFLUX}/api/v2/query", params={"org": ORG}, data=query, timeout=300,
                       headers={**INFLUX_HDR, "Content-Type": "application/vnd.flux", "Accept": "application/csv"})
     r.raise_for_status()
-    rows = []
-    for block in r.text.replace("\r\n", "\n").split("\n\n"):
-        if block.strip():
-            rows += list(csv.DictReader(io.StringIO(block)))
-    return rows
+    return [row for block in r.text.replace("\r\n", "\n").split("\n\n") if block.strip()
+            for row in csv.DictReader(io.StringIO(block))]
 
 
 def ts(s):
@@ -112,21 +111,30 @@ def ditto(thing, method, path, **kw):
     return r
 
 
+def reference(x):
+    """ECOD + per-signal median / sigma (floored: near-constant signals must not explode the drift)."""
+    det = ECOD(contamination=0.01).fit(x); det.ncols, det.med = x.shape[1], np.median(x, axis=0)  # noqa: E702
+    det.sd = np.maximum(np.std(x, axis=0), np.maximum(0.01 * np.abs(det.med), 1e-3))
+    return det
+
+
 def anomaly_score(t, x, now, det=None):
-    """Mean ECOD score of the assessment window / threshold. det: detector fitted on a fixed baseline;
-    None = fit on the history before the window (sliding baseline)."""
-    x = x[:, ~np.isnan(x).all(axis=0)]  # drop signals this robot does not report (e.g. temperatures)
+    """(ECOD score of the assessment window / threshold, driftSigma, signal behind it), or (None, None, "").
+    det: reference fitted on a fixed baseline; None = fit on the history before the window (sliding baseline)."""
+    keep = ~np.isnan(x).all(axis=0)  # drop signals this robot does not report (e.g. temperatures)
+    names, x = [n for n, k in zip(FIELDS, keep) if k], x[:, keep]
     ok = ~np.isnan(x).any(axis=1)
-    t, x = t[ok], x[ok]
-    recent = t >= now - ASSESS
+    t, x, recent = t[ok], x[ok], t[ok] >= now - ASSESS
     if det is None:
-        if recent.sum() == 0 or (~recent).sum() < 60:
-            return None
-        det = ECOD(contamination=0.01).fit(x[~recent])
+        if not recent.any() or (~recent).sum() < 60:
+            return None, None, ""
+        det = reference(x[~recent])
     elif recent.sum() == 0 or det.ncols != x.shape[1]:
-        return None
-    thr = max(float(det.threshold_), 1e-9)
-    return max(0.0, float(np.mean(det.decision_function(x[recent]))) / thr)
+        return None, None, ""
+    score = max(0.0, float(np.mean(det.decision_function(x[recent]))) / max(float(det.threshold_), 1e-9))
+    z = (np.median(x[recent], axis=0) - det.med) / det.sd
+    z = np.array([v if n.endswith("Temperature") else abs(v) for n, v in zip(names, z)])  # cooler is not wear
+    return score, max(0.0, float(z.max())), names[int(z.argmax())]
 
 
 class Worker:
@@ -158,8 +166,7 @@ class Worker:
         for f, (t, x) in load_history(self.thing, b0 + BASELINE_S, start=b0).items():
             x = x[:, :6][:, ~np.isnan(x[:, :6]).all(axis=0)]; x = x[~np.isnan(x).any(axis=1)]  # as anomaly_score
             if len(x) >= 60:
-                det[f] = ECOD(contamination=0.01).fit(x)
-                det[f].ncols = x.shape[1]
+                det[f] = reference(x)
         print(f"[baseline] {self.thing}: {iso(b0)} + {BASELINE_S} s, {len(det)} joints")
         self.det = det or None  # nothing to fit (no aggregates there yet): look again next cycle
         return det
@@ -193,16 +200,18 @@ class Worker:
         margin = float(m.event_state({"t": t_now})["overheat"])
         return t_now, time_to_overheat_h(m, t_now, u, HORIZON_H), margin
 
-    def classify(self, score, prev, rul, fault, t_now, tmax, old):
+    def classify(self, cur, prev, rul, fault, t_now, tmax, old, sig=""):
+        """cur, prev: (anomalyScore, driftSigma) of this and the previous cycle."""
         if fault or t_now >= tmax:
             return "fault", "faultCode" if fault else "temperature >= maxTemperature"
-        for name, (s_lim, r_lim) in (("alert", ALERT), ("watch", WATCH)):
+        for name, (s_lim, r_lim, d_lim) in (("alert", ALERT), ("watch", WATCH)):
             if 0 <= rul < r_lim:
                 return name, f"rulHours {rul:.2f} < {r_lim}"
-            if score is not None and min(score, prev or 0.0) >= s_lim:  # raise: 2 cycles over the limit
-                return name, f"anomalyScore {score:.2f} >= {s_lim}"
-            if score is not None and LEVEL[old] >= LEVEL[name] and score >= CLEAR * s_lim:  # hold
-                return name, f"anomalyScore {score:.2f} >= {CLEAR} x {s_lim}"
+            for v, p, lim, what in zip(cur, prev, (s_lim, d_lim), ("anomalyScore", f"driftSigma({sig})")):
+                if v is not None and min(v, p or 0.0) >= lim:  # raise: 2 cycles over the limit
+                    return name, f"{what} {v:.2f} >= {lim}"
+                if v is not None and LEVEL[old] >= LEVEL[name] and v >= CLEAR * lim:  # hold
+                    return name, f"{what} {v:.2f} >= {CLEAR} x {lim}"
         return "normal", ""
 
     def event_frame(self, f, old, new, reason, now, lines):
@@ -224,8 +233,7 @@ class Worker:
         feats = ditto(self.thing, "GET", "/features").json()
         det = self.baseline(now, dry_run) if self.thing in FIXED else None  # then only the thermal fit's 2 h:
         hist = load_history(self.thing, now, start=None if det is None else now - 2 * 3600 - ASSESS)
-        patch, lines, stale = {}, [], []
-        stamp = iso(now)
+        patch, lines, stale, stamp = {}, [], [], iso(now)
         for f in sorted(k for k in feats if JOINT_RE.search(k)):
             t, x = hist.get(f, (np.array([]), None))
             if not len(t) or now - t[-1] > STALE:
@@ -239,18 +247,16 @@ class Worker:
             tmax = feats[f].get("properties", {}).get("configuration", {}).get("maxTemperature", DEFAULT_TMAX)
             fault = bool(np.nanmax(x[t >= now - ASSESS, 6], initial=0) > 0)
             t_now, rul, margin = self.thermal(f, t, x, tmax)
-            if det is not None and f not in det:
-                score = None  # fixed baseline not available yet (reference period still running)
-            else:
-                score = anomaly_score(t, x[:, :6], now, det[f] if det is not None else None)
-            hi = min(margin, 1.0 - min(1.0, max(0.0, (score or 0.0) - 1.0) / 2.0))
+            score, drift, sig = (None, None, "") if det is not None and f not in det else \
+                anomaly_score(t, x[:, :6], now, det[f] if det is not None else None)  # (fixed reference not ready)
+            hi = min(margin, 1.0 - min(1.0, max(0.0, (score or 0.0) - 1.0) / 2.0), 1.0 - min(1.0, (drift or 0.0) / (2 * ALERT[2])))
             old = self.cond.get(f, "normal")
-            cond, reason = self.classify(score, self.prev.get(f), rul, fault, t_now, tmax, old)
-            self.prev[f] = score
+            cond, reason = self.classify((score, drift), self.prev.get(f, (None, None)), rul, fault, t_now, tmax, old, sig)
+            self.prev[f] = (score, drift)
             phm = {"healthIndex": round(hi, 4), "anomalyScore": round(score or 0.0, 4),
                    "rulHours": round(rul, 3), "condition": cond, "lastAssessedAt": stamp, "modelRef": MODEL_REF}
             patch[f] = {"properties": {"phm": phm}}
-            temp = f",temperature={t_now}" if math.isfinite(t_now) else ""
+            temp = (f",temperature={t_now}" if math.isfinite(t_now) else "") + (f",driftSigma={drift:.3f}" if drift is not None else "")
             lines.append(f"phm,thing_id={tag(self.thing)},feature_id={tag(f)} healthIndex={phm['healthIndex']},"
                          f"anomalyScore={phm['anomalyScore']},rulHours={phm['rulHours']},"
                          f"conditionLevel={LEVEL[cond]}i,condition=\"{cond}\"{temp} {int(now)}")

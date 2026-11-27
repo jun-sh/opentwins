@@ -29,7 +29,7 @@
 | P0 选型冻结 | ✅ |
 | P1 单机打通 | 🟡 中心服务栈 ✅、Panda 孪生 + 模拟数据 ✅；**G1 29 自由度：TM、孪生、适配器、真机上行 ✅；Grafana 面板 ✅** |
 | P2 Type 复用 | 🟡 Panda 适配器 `stack/adapters/panda_franka_mqtt.py` 已写好，fake 后端端到端通过（核心代码改动 0 行），**真机未跑**（无访问方式）；PiperX 适配器 + TM + 孪生 `lab.robots:piperx-001` 已建，fake 后端端到端通过，**真机未跑**；两者都有 MuJoCo 仿真后端（`--backend sim`，Menagerie 模型），在 DGX 上持续产生数据（见 §5 仿真） |
-| P3 PHM 链路 | 🟡 PHM worker（ProgPy 热模型 + PyOD ECOD）每 120 s 评估三台机器人（G1 29 + Panda 7 + PiperX 6 个关节）并写回 `phm` ✅；Grafana `PHM Fleet Overview` + `PHM Health per Robot` ✅；Event Frame（InfluxDB `event_frame` + Ditto `conditionChanged`）✅；**检出验证 ✅（2026-11-26）**：PiperX joint2 仿真磨损在 +3.5 h 报 watch、5 个对照关节 0 误报（固定基线 + 防抖，见 `p3-phm.md`「检出验证」）；worker 改读 InfluxDB 降采样 bucket `phm_agg`，每轮 0.1–0.2 s（原 30–74 s）；Atlas CMMS 只评估未部署（见 `p3-phm.md`）；`maxTemperature` 用占位 80 °C |
+| P3 PHM 链路 | 🟡 PHM worker（ProgPy 热模型 + PyOD ECOD）每 120 s 评估三台机器人（G1 29 + Panda 7 + PiperX 6 个关节）并写回 `phm` ✅；Grafana `PHM Fleet Overview` + `PHM Health per Robot` ✅；Event Frame（InfluxDB `event_frame` + Ditto `conditionChanged`）✅；**检出验证 ✅（2026-11-26）**：PiperX joint2 仿真磨损在 +3.5 h 报 watch、5 个对照关节 0 误报（固定基线 + 防抖，见 `p3-phm.md`「检出验证」）；**严重度分级 ✅（2026-11-27）**：新增 `driftSigma`（偏离基线的标准差倍数，不饱和），≥10 报 alert；回放中 joint2 alert 比 fault 早 3 h，对照关节最大 3.8、0 误报（见 `p3-phm.md`「严重度分级」）；worker 改读 InfluxDB 降采样 bucket `phm_agg`，每轮 0.1–0.2 s（原 30–74 s）；Atlas CMMS 只评估未部署（见 `p3-phm.md`）；`maxTemperature` 用占位 80 °C |
 | P4 ~~核电演示~~ | ❌ 已取消（2026-11-24，项目只做机器人） |
 | P5 加固 | 🟡 离线部署 + SBOM ✅（无网络隔离环境安装已验证，见 §5 P5）；审计未做 |
 

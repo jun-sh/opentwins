@@ -5,9 +5,10 @@
 ```
 InfluxDB raw/telemetry ──(任务 phm-downsample-30s, 每分钟)──▶ phm_agg/telemetry_30s ──(6 h 窗口)──▶ phm-worker（每 120 s）
    ├─ PyOD ECOD   → anomalyScore（最近 5 min 平均分 / 训练阈值；1 = 1% 污染率阈值；训练集：滑动 6 h，或固定健康基线）
+   ├─ 漂移 → driftSigma（最近 5 min 各信号中位数偏离同一基线中位数的倍数，以基线标准差为单位，取最大；温度只计升高）
    ├─ ProgPy JointThermal → rulHours（到 maxTemperature 的时间，上限 24 h）+ 热裕度
-   ├─ healthIndex = min(热裕度, 1 − max(0, anomalyScore−1)/2)
-   └─ condition：fault（faultCode≠0 或 T≥Tmax）/ alert（RUL<1 h 或 score≥2）/ watch（RUL<8 h 或 score≥1）/ normal
+   ├─ healthIndex = min(热裕度, 1 − max(0, anomalyScore−1)/2, 1 − driftSigma/20)
+   └─ condition：fault（faultCode≠0 或 T≥Tmax）/ alert（RUL<1 h 或 score≥2 或 drift≥10）/ watch（RUL<8 h 或 score≥1）/ normal
         │
         ├─▶ Ditto：HTTP PATCH /api/2/things/<id>/features（merge-patch，只写 phm 分组 + lastAssessedAt + modelRef）
         ├─▶ InfluxDB phm_agg/phm（供 Grafana 画趋势）
@@ -35,7 +36,7 @@ InfluxDB raw/telemetry ──(任务 phm-downsample-30s, 每分钟)──▶ phm
 - **`maxTemperature` 未知**：G1 关节过温限值未查到宇树文档，worker 用占位 80 °C（`PHM_DEFAULT_MAX_TEMP`）。确认后写入孪生 `features/<joint>/properties/configuration/maxTemperature`，worker 自动优先使用。
 - 机器人多数时间静止，热模型拟合经常落在边界（tau=60 s、k=50），RUL 基本是上限 24 h；要有带载数据才有意义。
 - 滑动基线（G1）：训练集是最近 6 h，工况一变分数就升高，缓慢退化会被学进基线而检不出；固定基线只适合重复节拍的工况（见下节）。
-- ECOD 分数在远超基线的数据上饱和（PiperX joint2 约 1.2），到不了 alert 的 2.0：异常分数只回答"是否偏离"，严重程度看热裕度（`healthIndex`）和 `faultCode`。
+- ECOD 分数在远超基线的数据上饱和（PiperX joint2 约 1.2），到不了 alert 的 2.0：异常分数只回答"是否偏离"，严重程度由 `driftSigma` 分级（见下文「严重度分级」）。`driftSigma` 只写 InfluxDB（TM 没有这个属性，加属性要升 TM 版本），Ditto 里通过 `condition`、事件 `reason` 和 `healthIndex` 体现。
 - Telegraf 只入库 20–30% 原始样本（见 HANDOFF §6），对 30 s 聚合影响不大。
 - **无新数据（离线）**：关节超过 10 min（`PHM_STALE_S`）没有数据时不评估，不崩溃也不写假值：Ditto 保留上一次的 `healthIndex/anomalyScore/condition`（`lastAssessedAt` 显示其时间），`rulHours` 改为 -1（TM 定义的"未估计"），InfluxDB `phm` 写 `condition="stale"`、`conditionLevel=-1`。TM 的 `condition` 枚举没有 `unknown`/`stale`，要在 Ditto 里显式表示需给 `monitored-component` TM 升版本加枚举值（核心改动，待决定）。
 
@@ -65,3 +66,19 @@ InfluxDB raw/telemetry ──(任务 phm-downsample-30s, 每分钟)──▶ phm
 - 认证是 JWT；有对外 webhook（工单/请求状态变化），README 没提 MQTT/IoT，"meter trigger 自动建工单"未在文档中确认。
 - **不部署的原因**：5 个容器（含非官方对象存储镜像）、要建账号，比本阶段其他部分都重；另外 AGPL 和 Grafana 一样需要交付前法务意见。
 - **工单触发方案（建议，零代码）**：Ditto connectivity 新建一个 HTTP-push 连接，目标为 Atlas API 的"创建工单/请求"端点，`topics: _/_/things/live/messages`，用 Ditto 的 payload mapping（JavaScript）把 `conditionChanged` 且 `to ∈ {alert, fault}` 的消息转换成工单 JSON（标题 = `<thing>/<feature> <condition>`，描述 = reason + Grafana 链接），`Authorization: Bearer <JWT>` 放在目标 header。工单号可以写回 `phm` 之外的属性用于去重（需在 TM 里加可选字段）。Atlas 工单状态变化可以反向用 webhook 推给 Ditto HTTP API。**具体端点路径和请求体未经源码确认**，部署时先看运行实例的 OpenAPI 文档。
+
+## 严重度分级（2026-11-27）
+
+- 问题：ECOD 用尾部概率打分，最近窗口完全落在基线分布之外后概率到底，分数停在约 1.2，磨损再重也只报 watch；fault 来自仿真器的过温标志，不是 PHM 自己的判断。
+- 做法：`driftSigma` = 最近 5 min 每个信号的中位数相对基线中位数偏离几个基线标准差，取所有信号的最大值，并记录是哪个信号。温度只计升高（冷启动降温不算磨损）；标准差下限为 max(1% × |中位数|, 0.001)，防止近似常数的信号把值放大。基线与 ECOD 相同（固定基线机器人用固定时段，G1 用滑动 6 h）。`PHM_ALERT_DRIFT`（默认 10）触发 alert，防抖规则与分数相同（连续 2 个周期越线，低于 0.8 × 阈值解除）；`PHM_WATCH_DRIFT` 默认关闭（inf）。
+- 标定（11-24 14:00 → 11-27 10:50 回放，每 10 min）：
+
+| 关节 | driftSigma 最大值 | 状态 |
+|---|---|---|
+| Panda 7 个关节（无磨损） | 0.7–1.4 | 全部 normal |
+| PiperX 5 个对照关节 | 2.0–3.8（仿真适配器重启时温度瞬变；温度不单向计算时为 5.9） | 全部 normal |
+| PiperX joint2（磨损） | 30.1 | watch → alert（11-24 23:20，windingTemperature 10.7σ）→ fault（11-25 02:20） |
+
+- 每天的磨损周期（00:00 UTC 归零）：watch 约 03:00（ECOD），alert 约 11:00（drift ≥ 10），fault 约 14:30（仿真过温标志），alert 比 fault 早约 3.5 h。阈值 10 约为对照关节最大值的 2.6 倍。
+- Grafana：`PHM Fleet Overview` 和 `PHM Health per Robot` 各加一个 driftSigma 曲线面板（阈值线 10）。
+- 局限：阈值只在一种仿真磨损上标定；真机的工况变化（换任务、负载变化）也会推高漂移，固定基线机器人换工况后要重设基线。
