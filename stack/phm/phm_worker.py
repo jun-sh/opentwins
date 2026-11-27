@@ -9,7 +9,7 @@ Every PHM_PERIOD_S, for every joint Feature (`*_joint` or `jointN`) of each Thin
   * rulHours = ProgPy JointThermal time to configuration.maxTemperature at the recent mean load
     (-1 = not estimated: no fresh data, or the robot reports no joint temperatures, e.g. Franka FCI)
   * healthIndex = min(thermal margin (ProgPy event_state), anomaly factor); condition by thresholds
-Writes: Ditto merge patch on /features (HTTP, OWNER user), InfluxDB measurement `phm` (for Grafana),
+Writes: Ditto merge patch on /features (HTTP, OWNER user), InfluxDB `phm_agg` measurement `phm` (for Grafana),
 and Event Frames: InfluxDB measurement `event_frame` (phase=start/end) + Ditto `conditionChanged` event.
 """
 import csv
@@ -35,8 +35,8 @@ DITTO = E.get("DITTO_URL", "http://nginx:80").rstrip("/")
 DITTO_AUTH = (E.get("DITTO_USER", "admin"), E["DITTO_USER_PASSWORD"])
 INFLUX = E.get("INFLUX_URL", "http://influxdb:8086").rstrip("/")
 INFLUX_HDR = {"Authorization": f"Token {E['INFLUX_TOKEN']}"}
-BUCKET, ORG = E.get("INFLUX_BUCKET", "raw"), E.get("INFLUX_ORG", "phm")
-AGG = E.get("PHM_AGG_BUCKET", "phm_agg")
+ORG = E.get("INFLUX_ORG", "phm")
+AGG = E.get("PHM_AGG_BUCKET", "phm_agg")  # aggregates in; PHM results, baselines, event frames out (raw expires)
 PERIOD = float(E.get("PHM_PERIOD_S", 120))
 HISTORY = int(E.get("PHM_HISTORY_S", 6 * 3600))
 ASSESS = int(E.get("PHM_ASSESS_S", 300))
@@ -97,7 +97,7 @@ def load_history(thing, now, start=None):
 
 def influx_write(lines):
     if lines:
-        requests.post(f"{INFLUX}/api/v2/write", params={"org": ORG, "bucket": BUCKET, "precision": "s"},
+        requests.post(f"{INFLUX}/api/v2/write", params={"org": ORG, "bucket": AGG, "precision": "s"},
                       data="\n".join(lines), headers=INFLUX_HDR, timeout=30).raise_for_status()
 
 
@@ -139,7 +139,7 @@ class Worker:
         """Per-joint ECOD fitted once on [from, from + PHM_BASELINE_S] ({} until that has passed)."""
         if self.det is not None:
             return self.det
-        q = (f'from(bucket: "{BUCKET}") |> range(start: 0) |> filter(fn: (r) => r._measurement == "phm_baseline"'
+        q = (f'from(bucket: "{AGG}") |> range(start: 0) |> filter(fn: (r) => r._measurement == "phm_baseline"'
              f' and r.thing_id == "{self.thing}" and r._field == "from") |> last()')
         rows = [r for r in flux(q) if r.get("_value") not in (None, "", "_value")]
         b0 = float(rows[0]["_value"]) if rows else None
@@ -166,7 +166,7 @@ class Worker:
 
     def restore_frames(self):
         """Reopen Event Frames whose last record is a start (survives restarts)."""
-        q = (f'from(bucket: "{BUCKET}") |> range(start: -30d) |> filter(fn: (r) => r._measurement == "event_frame"'
+        q = (f'from(bucket: "{AGG}") |> range(start: -30d) |> filter(fn: (r) => r._measurement == "event_frame"'
              f' and r.thing_id == "{self.thing}") |> last() |> pivot(rowKey: ["_time"], columnKey: ["_field"],'
              f' valueColumn: "_value") |> keep(columns: ["_time", "feature_id", "phase", "condition"])')
         for row in flux(q):

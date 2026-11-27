@@ -52,3 +52,8 @@ task=$(ifx "$IFX/tasks?orgID=$org&name=phm-downsample-30s" | jq -r '.tasks[0].id
 if [ -n "$task" ]; then ifx -X PATCH "$IFX/tasks/$task" -d "{\"flux\":$flux}" >/dev/null
 else ifx -X POST "$IFX/tasks" -d "{\"orgID\":\"$org\",\"flux\":$flux}" >/dev/null; fi
 echo "  task phm-downsample-30s"
+ret=${INFLUX_RAW_RETENTION:-14d}; [[ $ret =~ ^([0-9]+)d?$ ]] || { echo "bad INFLUX_RAW_RETENTION=$ret" >&2; exit 1; }
+raw=$(ifx "$IFX/buckets?orgID=$org&name=raw" | jq -r '.buckets[0].id')  # deletes raw data older than this
+sg=$(( BASH_REMATCH[1] > 0 ? 86400 : 604800 ))  # 1-day shards so expiry is not 7 days late
+ifx -X PATCH "$IFX/buckets/$raw" -d "{\"retentionRules\":[{\"type\":\"expire\",\"everySeconds\":$((BASH_REMATCH[1] * 86400)),\"shardGroupDurationSeconds\":$sg}]}" >/dev/null
+echo "  bucket raw retention $ret"

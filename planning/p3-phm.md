@@ -10,9 +10,9 @@ InfluxDB raw/telemetry ──(任务 phm-downsample-30s, 每分钟)──▶ phm
    └─ condition：fault（faultCode≠0 或 T≥Tmax）/ alert（RUL<1 h 或 score≥2）/ watch（RUL<8 h 或 score≥1）/ normal
         │
         ├─▶ Ditto：HTTP PATCH /api/2/things/<id>/features（merge-patch，只写 phm 分组 + lastAssessedAt + modelRef）
-        ├─▶ InfluxDB raw/phm（供 Grafana 画趋势）
+        ├─▶ InfluxDB phm_agg/phm（供 Grafana 画趋势）
         └─▶ Event Frame（condition 离开/回到 normal 时）
-              ├─ InfluxDB raw/event_frame：phase=start|end，condition，reason，durationS（end）
+              ├─ InfluxDB phm_agg/event_frame：phase=start|end，condition，reason，durationS（end）
               └─ Ditto 事件：features/<f>/outbox/messages/conditionChanged（TM 已定义的可选事件）
 ```
 
@@ -51,9 +51,9 @@ InfluxDB raw/telemetry ──(任务 phm-downsample-30s, 每分钟)──▶ phm
 | **固定基线 + 防抖（已上线）** | **+3.5 h**（基线结束后 1.5 h；此时阻尼仅 +1.75） | **0** | 1，持续保持 | 1.17 / 1.22 |
 
 - 三种配置的 `fault` 都在 +14.5 h（仿真驱动器在绕组 > 70 °C 时置 `motor_overheating`）。热 RUL 没有提前量：稳态温度低于 `maxTemperature` 时一直是上限 24 h，超过后几小时内降到 0；`healthIndex`（热裕度）从 0.6 平滑降到 0，是最好的趋势指标。
-- 改动：`PHM_FIXED_BASELINE`（重复节拍的机器人：Panda、PiperX）用固定健康时段 `PHM_BASELINE_S`（2 h）训练 ECOD，起点取 InfluxDB `raw/phm_baseline` 最新一条（`from` = Unix 秒；缺失时取该机器人第一条聚合数据 + 60 s 并写入）。防抖：连续 2 个周期越线才升级，低于 `PHM_CLEAR_RATIO`（0.8）× 阈值才解除。G1 动作不固定，仍用滑动基线。
+- 改动：`PHM_FIXED_BASELINE`（重复节拍的机器人：Panda、PiperX）用固定健康时段 `PHM_BASELINE_S`（2 h）训练 ECOD，起点取 InfluxDB `phm_agg/phm_baseline` 最新一条（`from` = Unix 秒；缺失时取该机器人第一条聚合数据 + 60 s 并写入）。防抖：连续 2 个周期越线才升级，低于 `PHM_CLEAR_RATIO`（0.8）× 阈值才解除。G1 动作不固定，仍用滑动基线。
 - **维修 / 换件后重设基线**：写一条新的 `phm_baseline`（`from` = 维修后的健康时刻），然后重启 worker：
-  `printf 'phm_baseline,thing_id=lab.robots:piperx-001 from=%s %s\n' $(date +%s) $(date +%s) | curl -H "Authorization: Token $INFLUX_TOKEN" "http://127.0.0.1:18086/api/v2/write?org=phm&bucket=raw&precision=s" --data-binary @-`
+  `printf 'phm_baseline,thing_id=lab.robots:piperx-001 from=%s %s\n' $(date +%s) $(date +%s) | curl -H "Authorization: Token $INFLUX_TOKEN" "http://127.0.0.1:18086/api/v2/write?org=phm&bucket=phm_agg&precision=s" --data-binary @-`
 - 当前基线：PiperX 2026-11-24 11:51:15 UTC；Panda 2026-11-26 15:22:10 UTC（Panda 没有 11-24 的聚合数据；它没有磨损，任何时段都健康）。
 - 仿真磨损现在按 UTC 墙钟 24 h 周期（`--sim-wear-cycle-h 24`）：每天 00:00 UTC 归零（相当于检修），重启不清零；joint2 约 +3.5 h 进入 watch、约 +14.5 h fault，每天重复一次，可持续观察。
 - 未覆盖：真机数据；多种磨损形态（只有阻尼/摩擦线性增长）；Panda 的误报只在线上观察（回放时 Panda 只有 7 h 聚合数据）。

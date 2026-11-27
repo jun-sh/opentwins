@@ -28,7 +28,7 @@
           "text": "All",
           "value": "$__all"
         },
-        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"raw\", tag: \"thing_id\", predicate: (r) => r._measurement == \"phm\", start: -30d)",
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"phm_agg\", tag: \"thing_id\", predicate: (r) => r._measurement == \"phm\", start: -30d)",
         "refresh": 2
       }
     ]
@@ -58,7 +58,7 @@
             "type": "influxdb",
             "uid": "influxdb-phm"
           },
-          "query": "from(bucket: \"raw\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"phm\")\n  |> last()\n  |> pivot(rowKey: [\"thing_id\", \"feature_id\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"thing_id\"])\n  |> reduce(identity: {joints: 0, assessed: 0, worstLevel: -1, minHealth: 1.0, maxAnomaly: 0.0, minRul: -1.0},\n      fn: (r, accumulator) => ({\n        joints: accumulator.joints + 1,\n        assessed: accumulator.assessed + (if r.conditionLevel >= 0 then 1 else 0),\n        worstLevel: if r.conditionLevel > accumulator.worstLevel then r.conditionLevel else accumulator.worstLevel,\n        minHealth: if exists r.healthIndex and r.conditionLevel >= 0 and r.healthIndex < accumulator.minHealth then r.healthIndex else accumulator.minHealth,\n        maxAnomaly: if exists r.anomalyScore and r.conditionLevel >= 0 and r.anomalyScore > accumulator.maxAnomaly then r.anomalyScore else accumulator.maxAnomaly,\n        minRul: if exists r.rulHours and r.rulHours >= 0.0 and (accumulator.minRul < 0.0 or r.rulHours < accumulator.minRul) then r.rulHours else accumulator.minRul}))\n  |> group()\n  |> sort(columns: [\"worstLevel\", \"minHealth\"], desc: true)"
+          "query": "from(bucket: \"phm_agg\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"phm\")\n  |> last()\n  |> pivot(rowKey: [\"thing_id\", \"feature_id\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"thing_id\"])\n  |> reduce(identity: {joints: 0, assessed: 0, worstLevel: -1, minHealth: 1.0, maxAnomaly: 0.0, minRul: -1.0},\n      fn: (r, accumulator) => ({\n        joints: accumulator.joints + 1,\n        assessed: accumulator.assessed + (if r.conditionLevel >= 0 then 1 else 0),\n        worstLevel: if r.conditionLevel > accumulator.worstLevel then r.conditionLevel else accumulator.worstLevel,\n        minHealth: if exists r.healthIndex and r.conditionLevel >= 0 and r.healthIndex < accumulator.minHealth then r.healthIndex else accumulator.minHealth,\n        maxAnomaly: if exists r.anomalyScore and r.conditionLevel >= 0 and r.anomalyScore > accumulator.maxAnomaly then r.anomalyScore else accumulator.maxAnomaly,\n        minRul: if exists r.rulHours and r.rulHours >= 0.0 and (accumulator.minRul < 0.0 or r.rulHours < accumulator.minRul) then r.rulHours else accumulator.minRul}))\n  |> group()\n  |> sort(columns: [\"worstLevel\", \"minHealth\"], desc: true)"
         }
       ],
       "fieldConfig": {
@@ -296,7 +296,7 @@
             "type": "influxdb",
             "uid": "influxdb-phm"
           },
-          "query": "from(bucket: \"raw\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"phm\")\n  |> last()\n  |> pivot(rowKey: [\"thing_id\", \"feature_id\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"thing_id\"])\n  |> filter(fn: (r) => r.conditionLevel >= 0)\n  |> group()\n  |> sort(columns: [\"healthIndex\"])\n  |> limit(n: 10)\n  |> keep(columns: [\"thing_id\", \"feature_id\", \"condition\", \"healthIndex\", \"anomalyScore\", \"rulHours\", \"temperature\"])"
+          "query": "from(bucket: \"phm_agg\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"phm\")\n  |> last()\n  |> pivot(rowKey: [\"thing_id\", \"feature_id\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"thing_id\"])\n  |> filter(fn: (r) => r.conditionLevel >= 0)\n  |> group()\n  |> sort(columns: [\"healthIndex\"])\n  |> limit(n: 10)\n  |> keep(columns: [\"thing_id\", \"feature_id\", \"condition\", \"healthIndex\", \"anomalyScore\", \"rulHours\", \"temperature\"])"
         }
       ],
       "fieldConfig": {
@@ -464,7 +464,7 @@
             "type": "influxdb",
             "uid": "influxdb-phm"
           },
-          "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"event_frame\" and r.thing_id =~ /^${thing_id:regex}$/)\n  |> pivot(rowKey: [\"_time\", \"thing_id\", \"feature_id\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 50)\n  |> keep(columns: [\"_time\", \"thing_id\", \"feature_id\", \"phase\", \"condition\", \"reason\", \"durationS\"])"
+          "query": "from(bucket: \"phm_agg\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"event_frame\" and r.thing_id =~ /^${thing_id:regex}$/)\n  |> pivot(rowKey: [\"_time\", \"thing_id\", \"feature_id\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 50)\n  |> keep(columns: [\"_time\", \"thing_id\", \"feature_id\", \"phase\", \"condition\", \"reason\", \"durationS\"])"
         }
       ],
       "fieldConfig": {
@@ -574,7 +574,7 @@
             "type": "influxdb",
             "uid": "influxdb-phm"
           },
-          "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"phm\" and r._field == \"healthIndex\" and r.thing_id =~ /^${thing_id:regex}$/)\n  |> group(columns: [\"thing_id\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: min, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, robot: r.thing_id}))\n  |> group(columns: [\"robot\"])"
+          "query": "from(bucket: \"phm_agg\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"phm\" and r._field == \"healthIndex\" and r.thing_id =~ /^${thing_id:regex}$/)\n  |> group(columns: [\"thing_id\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: min, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, robot: r.thing_id}))\n  |> group(columns: [\"robot\"])"
         }
       ],
       "fieldConfig": {
@@ -606,7 +606,7 @@
             "type": "influxdb",
             "uid": "influxdb-phm"
           },
-          "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"phm\" and r._field == \"anomalyScore\" and r.thing_id =~ /^${thing_id:regex}$/)\n  |> group(columns: [\"thing_id\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, robot: r.thing_id}))\n  |> group(columns: [\"robot\"])"
+          "query": "from(bucket: \"phm_agg\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"phm\" and r._field == \"anomalyScore\" and r.thing_id =~ /^${thing_id:regex}$/)\n  |> group(columns: [\"thing_id\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, robot: r.thing_id}))\n  |> group(columns: [\"robot\"])"
         }
       ],
       "fieldConfig": {

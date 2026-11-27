@@ -8,7 +8,7 @@ All components are unmodified upstream images; this directory only holds configu
 | mosquitto | eclipse-mosquitto 2.1.4 | `0.0.0.0:11883` | edge → centre MQTT (auth + ACL) |
 | Ditto (policies, things, things-search, connectivity, gateway, ui) + mongodb | eclipse/ditto 3.9.9, mongo 7.0.48 | — | twin state, WoT Type validation |
 | nginx | nginx 1.30.7 | `127.0.0.1:18080` | Ditto API/UI (`/api`, `/ui/`) + Type library (`/models/`) |
-| influxdb | influxdb 2.10.1 | `127.0.0.1:18086` | raw high-rate history (bucket `raw`) |
+| influxdb | influxdb 2.10.1 | `127.0.0.1:18086` | raw high-rate history (bucket `raw`, `INFLUX_RAW_RETENTION`, default 14 d); PHM results and 30 s aggregates (bucket `phm_agg`, kept forever) |
 | telegraf | telegraf 1.40.3 | — | MQTT → InfluxDB, memory buffer |
 | grafana | grafana 12.4.15 | `127.0.0.1:13000` | dashboards (folder *PHM*) |
 | phm-worker (project `phm-analytics`) | built from `phm/` (python 3.11, progpy 1.9.0, pyod 3.6.9) | — | P3 PHM assessment every 120 s → Ditto `phm` |
@@ -23,7 +23,7 @@ docker-compose up -d
 cd phm && docker-compose -p phm-analytics --env-file ../.env up -d --build   # PHM worker (-p is required: .env sets COMPOSE_PROJECT_NAME=phm)
 ```
 
-InfluxDB measurements in bucket `raw`: `telemetry` (edge raw), `phm` (PHM results per feature), `event_frame` (abnormal episodes, `phase`=start/end), `phm_baseline` (fixed-baseline start per robot). Bucket `phm_agg` (no expiry): `telemetry_30s`, 30 s joint aggregates written every minute by the InfluxDB task `phm-downsample-30s` (`influx/downsample-30s.flux`, created by `provision.sh`); the PHM worker reads only this.
+InfluxDB bucket `raw` (expires after `INFLUX_RAW_RETENTION`, default `14d`, ~25 GB/day with the sims; set at first start and by `provision.sh`, 1-day shards): `telemetry` (edge raw). Bucket `phm_agg` (no expiry): `telemetry_30s`, 30 s joint aggregates written every minute by the InfluxDB task `phm-downsample-30s` (`influx/downsample-30s.flux`, created by `provision.sh`); `phm` (PHM results per feature), `event_frame` (abnormal episodes, `phase`=start/end), `phm_baseline` (fixed-baseline start per robot). The PHM worker reads and writes only `phm_agg`; the Grafana PHM dashboards read `phm`/`event_frame` from it, the telemetry dashboards read `raw` (so show at most the retention period).
 
 Credentials are in `.env` (git-ignored): Ditto `DITTO_USER` (default `admin`) / `DITTO_USER_PASSWORD`, Grafana `admin` / `GRAFANA_ADMIN_PASSWORD`.
 
@@ -51,14 +51,14 @@ validates every write. Ditto blocks Thing Model downloads from private addresses
 | File | Lines | Purpose |
 |---|---|---|
 | `scripts/init-env.sh` | 31 | generate secrets and credential files |
-| `scripts/provision.sh` | 54 | PUT declarative JSON to the Ditto API; InfluxDB bucket `phm_agg` + downsample task |
+| `scripts/provision.sh` | 59 | PUT declarative JSON to the Ditto API; InfluxDB bucket `phm_agg` + downsample task + `raw` retention |
 | `scripts/influx-backfill.sh` | 15 | fill `phm_agg` from raw for a past range (1 h chunks, same Flux as the task): `scripts/influx-backfill.sh <start> <stop> [thing regex]` |
 | `influx/downsample-30s.flux` | 17 | InfluxDB task: raw joint telemetry → 30 s mean/min/max in `phm_agg` (config, not code) |
 | `scripts/smoke-test.sh` | 27 | end-to-end check |
 | `adapters/systemd/g1-adapter.service` | 15 | user unit for the adapter on the G1 jump host (config, not code) |
 | `adapters/systemd/{panda,piperx}-sim-adapter.service` | 15 each | user units for the two sim adapters on the DGX; read `~/.config/phm-sim/env` (`OPENTWINS_STACK`, `MENAGERIE_DIR`, `MQTT_EDGE_PASSWORD`, mode 600). PiPER unit injects wear on `joint2`, both use a 24 h wear cycle (config, not code) |
 | `adapters/g1_dds_mqtt.py` | 167 | G1 29-DoF DDS (`rt/lowstate`, `bmsstate`) → MQTT; subscribe-only. Run on the G1 jump host: `PYTHONPATH=<dir with paho> python g1_dds_mqtt.py --iface enp6s0 --mqtt-host <DGX>`; needs `MQTT_EDGE_PASSWORD`. Raw payload is compacted for the WiFi uplink: fast fields rounded, slow fields (voltage, temperatures, fault) only on change or every 100 ms |
-| `phm/phm_worker.py` | 294 | P3 PHM worker, one loop over every robot in `PHM_THING_IDS` (joint Features `*_joint` or `jointN`): InfluxDB `phm_agg` 30 s aggregates → PyOD ECOD `anomalyScore` + ProgPy thermal `rulHours` → Ditto `phm` (HTTP merge patch), InfluxDB `phm` and `event_frame`, Ditto `conditionChanged` event; marks joints without fresh data `stale`; robots without joint temperatures (Franka FCI) get anomaly only, `rulHours` -1; robots in `PHM_FIXED_BASELINE` are scored against a fixed known-good period (`phm_baseline`), others against the last 6 h; 2-cycle raise / 0.8 clear hysteresis; `phm_worker.py <ISO time>...` replays history read-only. See `../planning/p3-phm.md` |
+| `phm/phm_worker.py` | 294 | P3 PHM worker, one loop over every robot in `PHM_THING_IDS` (joint Features `*_joint` or `jointN`): InfluxDB `phm_agg` 30 s aggregates → PyOD ECOD `anomalyScore` + ProgPy thermal `rulHours` → Ditto `phm` (HTTP merge patch), InfluxDB `phm_agg` `phm` and `event_frame`, Ditto `conditionChanged` event; marks joints without fresh data `stale`; robots without joint temperatures (Franka FCI) get anomaly only, `rulHours` -1; robots in `PHM_FIXED_BASELINE` are scored against a fixed known-good period (`phm_baseline`), others against the last 6 h; 2-cycle raise / 0.8 clear hysteresis; `phm_worker.py <ISO time>...` replays history read-only. See `../planning/p3-phm.md` |
 | `phm/thermal_model.py` | 73 | ProgPy `PrognosticsModel`: first-order joint thermal model, parameter fit, time to `maxTemperature` |
 | `phm/Dockerfile`, `phm/docker-compose.yml` | 34 | worker image and its own compose project `phm-analytics` (config, not code) |
 | `adapters/panda_franka_mqtt.py` | 248 | Franka Panda/FR3 libfranka `RobotState` (`read_once()` loop, ~1 kHz) → MQTT; read-only, never commands motion. `--backend pylibfranka` (FR3, system ≥ 5), `panda_py` (Panda, system 4.x), `sim` (MuJoCo Menagerie `franka_emika_panda` via `mujoco_sim.py`), `fake` (offline test). `python panda_franka_mqtt.py --backend <b> --robot-ip <FCI ip> --mqtt-host <DGX>`; needs `MQTT_EDGE_PASSWORD`. Not yet run on the real robot |
