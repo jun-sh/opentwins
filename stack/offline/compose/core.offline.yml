@@ -1,0 +1,15 @@
+# Offline overlay for stack/docker-compose.yml: never contact a registry; images come from the bundle.
+#   docker-compose -f docker-compose.yml -f offline/compose/core.offline.yml up -d --no-build
+services:
+  mosquitto: { pull_policy: never }
+  mongodb: { pull_policy: never }
+  policies: { pull_policy: never }
+  things: { pull_policy: never }
+  things-search: { pull_policy: never }
+  connectivity: { pull_policy: never }
+  gateway: { pull_policy: never }
+  ditto-ui: { image: "phm-ditto-ui:3.9.9-apk-offline", pull_policy: never }
+  nginx: { pull_policy: never }
+  influxdb: { pull_policy: never }
+  telegraf: { pull_policy: never }
+  grafana: { pull_policy: never }

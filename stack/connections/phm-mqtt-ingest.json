@@ -1,0 +1,22 @@
+{
+  "id": "phm-mqtt-ingest",
+  "name": "PHM MQTT ingest (twin state)",
+  "connectionType": "mqtt",
+  "connectionStatus": "open",
+  "uri": "tcp://ditto:${MQTT_DITTO_PASSWORD}@mosquitto:1883",
+  "failoverEnabled": true,
+  "clientCount": 1,
+  "specificConfig": { "clientId": "ditto-phm-ingest" },
+  "sources": [
+    {
+      "addresses": ["phm/state/#"],
+      "authorizationContext": ["integration:phm-ingest"],
+      "qos": 0,
+      "enforcement": {
+        "input": "{{ source:address }}",
+        "filters": ["phm/state/{{ thing:id }}"]
+      }
+    }
+  ],
+  "targets": []
+}

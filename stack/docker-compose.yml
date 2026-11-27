@@ -1,0 +1,185 @@
+# PHM reference stack - P1 (central services).
+# Ditto services are derived from eclipse-ditto/ditto deployment/docker/docker-compose.yml (EPL-2.0),
+# with: pinned versions, persistent MongoDB volume, no host port for MongoDB/gateway, swagger-ui removed,
+# nginx also serving the WoT Type library under /models/.
+# Run scripts/init-env.sh once before the first `docker-compose up`.
+
+x-ditto-service: &ditto-service
+  restart: unless-stopped
+  networks:
+    default:
+      aliases:
+        - ditto-cluster
+  depends_on:
+    - mongodb
+  healthcheck:
+    test: curl --fail `hostname`:7626/alive || exit 1
+    interval: 30s
+    timeout: 15s
+    retries: 4
+    start_period: 120s
+  logging:
+    options:
+      max-size: 50m
+
+x-ditto-env: &ditto-env
+  TZ: UTC
+  BIND_HOSTNAME: 0.0.0.0
+  MONGO_DB_HOSTNAME: mongodb
+  JAVA_TOOL_OPTIONS: >-
+    -XX:ActiveProcessorCount=2 -XX:+ExitOnOutOfMemoryError -XX:+UseContainerSupport
+    -XX:+UseStringDeduplication -Xss512k -XX:MaxRAMPercentage=50 -XX:+UseG1GC -XX:MaxGCPauseMillis=150
+    -Dpekko.coordinated-shutdown.exit-jvm=on -Dpekko.cluster.shutdown-after-unsuccessful-join-seed-nodes=180s
+    -Dpekko.cluster.failure-detector.threshold=15.0 -Dpekko.cluster.failure-detector.expected-response-after=10s
+    -Dpekko.cluster.failure-detector.acceptable-heartbeat-pause=20s -Dpekko.cluster.downing-provider-class=
+
+services:
+  # ---------------------------------------------------------------- messaging
+  mosquitto:
+    image: docker.io/library/eclipse-mosquitto:2.1.4-alpine
+    restart: unless-stopped
+    ports:
+      - "${PHM_MQTT_BIND:-0.0.0.0}:${PHM_MQTT_PORT:-11883}:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/acl:/mosquitto/config/acl:ro
+      - ./secrets/mosquitto:/mosquitto/secrets
+      - mosquitto-data:/mosquitto/data
+
+  # ---------------------------------------------------------------- twin (Eclipse Ditto)
+  mongodb:
+    image: docker.io/library/mongo:7.0.48
+    restart: unless-stopped
+    command: mongod --storageEngine wiredTiger --noscripting
+    environment:
+      TZ: UTC
+    volumes:
+      - mongo-data:/data/db
+    logging:
+      options:
+        max-size: 50m
+
+  policies:
+    <<: *ditto-service
+    image: docker.io/eclipse/ditto-policies:${DITTO_VERSION:-3.9.9}
+    environment:
+      <<: *ditto-env
+
+  things:
+    <<: *ditto-service
+    image: docker.io/eclipse/ditto-things:${DITTO_VERSION:-3.9.9}
+    environment:
+      <<: *ditto-env
+      # Ditto blocks Thing Model downloads from private addresses (SSRF guard); allow only our Type library host.
+      THINGS_WOT_THING_MODEL_HTTP_SECURITY_ALLOWED_HOSTNAMES: phm-models
+
+  things-search:
+    <<: *ditto-service
+    image: docker.io/eclipse/ditto-things-search:${DITTO_VERSION:-3.9.9}
+    environment:
+      <<: *ditto-env
+
+  connectivity:
+    <<: *ditto-service
+    image: docker.io/eclipse/ditto-connectivity:${DITTO_VERSION:-3.9.9}
+    environment:
+      <<: *ditto-env
+
+  gateway:
+    <<: *ditto-service
+    image: docker.io/eclipse/ditto-gateway:${DITTO_VERSION:-3.9.9}
+    environment:
+      <<: *ditto-env
+      ENABLE_PRE_AUTHENTICATION: "true"
+      DEVOPS_PASSWORD: ${DITTO_DEVOPS_PASSWORD:?run scripts/init-env.sh}
+
+  ditto-ui:
+    # upstream UI with upgraded Alpine packages (CVE fix); see ditto-ui/Dockerfile
+    build:
+      context: ./ditto-ui
+      args:
+        BASE: docker.io/eclipse/ditto-ui:${DITTO_VERSION:-3.9.9}
+    image: phm-ditto-ui:${DITTO_VERSION:-3.9.9}-apk
+    restart: unless-stopped
+
+  # Ditto reverse proxy (basic auth -> pre-authenticated subject "nginx:<user>")
+  # and static host for the WoT Type library at http://phm-models/models/...
+  nginx:
+    image: docker.io/library/nginx:1.30.7-alpine
+    restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          - phm-models
+    ports:
+      - "${PHM_BIND:-127.0.0.1}:${PHM_HTTP_PORT:-18080}:80"
+    volumes:
+      - ./ditto/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ditto/nginx-cors.conf:/etc/nginx/nginx-cors.conf:ro
+      - ./ditto/mime.types:/etc/nginx/mime.types:ro
+      - ./secrets/nginx.htpasswd:/etc/nginx/nginx.htpasswd:ro
+      - ./type-library:/usr/share/nginx/models:ro
+    depends_on:
+      - gateway
+      - ditto-ui
+
+  # ---------------------------------------------------------------- time series
+  influxdb:
+    image: docker.io/library/influxdb:2.10.1-alpine
+    restart: unless-stopped
+    ports:
+      - "${PHM_BIND:-127.0.0.1}:${PHM_INFLUX_PORT:-18086}:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_ADMIN_PASSWORD:?run scripts/init-env.sh}
+      DOCKER_INFLUXDB_INIT_ORG: phm
+      DOCKER_INFLUXDB_INIT_BUCKET: raw
+      DOCKER_INFLUXDB_INIT_RETENTION: ${INFLUX_RAW_RETENTION:-14d}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:?run scripts/init-env.sh}
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+
+  telegraf:
+    image: docker.io/library/telegraf:1.40.3-alpine
+    restart: unless-stopped
+    # The named volume is root-owned; hand the buffer dir to the telegraf user before the
+    # image entrypoint drops privileges.
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /var/lib/telegraf/buffer && chown -R telegraf:telegraf /var/lib/telegraf && exec /entrypoint.sh telegraf"]
+    environment:
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+      MQTT_TELEGRAF_PASSWORD: ${MQTT_TELEGRAF_PASSWORD}
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - telegraf-buffer:/var/lib/telegraf
+    depends_on:
+      - mosquitto
+      - influxdb
+
+  # ---------------------------------------------------------------- visualisation
+  grafana:
+    image: docker.io/grafana/grafana:12.4.15
+    restart: unless-stopped
+    ports:
+      - "${PHM_BIND:-127.0.0.1}:${PHM_GRAFANA_PORT:-13000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?run scripts/init-env.sh}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - influxdb
+
+volumes:
+  mosquitto-data:
+  mongo-data:
+  influxdb-data:
+  influxdb-config:
+  telegraf-buffer:
+  grafana-data:

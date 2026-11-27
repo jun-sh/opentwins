@@ -1,0 +1,93 @@
+{
+  "@context": [
+    "https://www.w3.org/2022/wot/td/v1.1",
+    {
+      "ditto": "https://ditto.eclipseprojects.io/wot/ditto-extension#"
+    }
+  ],
+  "@type": "tm:ThingModel",
+  "title": "Franka Emika Panda",
+  "description": "7-DoF arm. Feature IDs follow MuJoCo Menagerie franka_emika_panda joint names. Gripper not modelled in P1.",
+  "version": {
+    "model": "1.0.0"
+  },
+  "links": [
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "joint1"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "joint2"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "joint3"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "joint4"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "joint5"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "joint6"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/rotating-actuator-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "joint7"
+    },
+    {
+      "rel": "tm:submodel",
+      "href": "http://phm-models/models/component/controller-1.0.0.tm.jsonld",
+      "type": "application/tm+json",
+      "instanceName": "controller"
+    }
+  ],
+  "tm:optional": [
+    "/properties/serialNumber",
+    "/properties/parentId"
+  ],
+  "properties": {
+    "vendor": {
+      "type": "string",
+      "default": "Franka Robotics"
+    },
+    "model": {
+      "type": "string",
+      "default": "Panda"
+    },
+    "serialNumber": {
+      "type": "string"
+    },
+    "kinematicModelUri": {
+      "type": "string",
+      "default": "https://github.com/google-deepmind/mujoco_menagerie/tree/main/franka_emika_panda"
+    },
+    "parentId": {
+      "type": "string",
+      "description": "Thing ID of the parent asset-group (ISA-95 hierarchy)."
+    },
+    "isa95Path": {
+      "type": "string",
+      "description": "Slash-separated ISA-95 path, e.g. lab/cell-1/panda-001."
+    }
+  }
+}

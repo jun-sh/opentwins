@@ -1,0 +1,691 @@
+{
+  "uid": "phm-fleet",
+  "title": "PHM Fleet Overview",
+  "tags": [
+    "phm",
+    "fleet"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "thing_id",
+        "label": "Robots",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "influxdb-phm"
+        },
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"phm_agg\", tag: \"thing_id\", predicate: (r) => r._measurement == \"phm\", start: -30d)",
+        "refresh": 2
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Fleet: worst joint per robot (last assessment)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-phm"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-phm"
+          },
+          "query": "from(bucket: \"phm_agg\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"phm\")\n  |> last()\n  |> pivot(rowKey: [\"thing_id\", \"feature_id\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"thing_id\"])\n  |> reduce(identity: {joints: 0, assessed: 0, worstLevel: -1, minHealth: 1.0, maxAnomaly: 0.0, minRul: -1.0},\n      fn: (r, accumulator) => ({\n        joints: accumulator.joints + 1,\n        assessed: accumulator.assessed + (if r.conditionLevel >= 0 then 1 else 0),\n        worstLevel: if r.conditionLevel > accumulator.worstLevel then r.conditionLevel else accumulator.worstLevel,\n        minHealth: if exists r.healthIndex and r.conditionLevel >= 0 and r.healthIndex < accumulator.minHealth then r.healthIndex else accumulator.minHealth,\n        maxAnomaly: if exists r.anomalyScore and r.conditionLevel >= 0 and r.anomalyScore > accumulator.maxAnomaly then r.anomalyScore else accumulator.maxAnomaly,\n        minRul: if exists r.rulHours and r.rulHours >= 0.0 and (accumulator.minRul < 0.0 or r.rulHours < accumulator.minRul) then r.rulHours else accumulator.minRul}))\n  |> group()\n  |> sort(columns: [\"worstLevel\", \"minHealth\"], desc: true)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "thing_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Robot"
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Per-joint PHM",
+                    "url": "/d/phm-g1-health?var-thing_id=${__value.raw}&${__url_time_range}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "joints"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Joints"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "assessed"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Assessed"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "worstLevel"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Worst condition"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "-1": {
+                        "text": "stale",
+                        "color": "text",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "normal",
+                        "color": "green",
+                        "index": 1
+                      },
+                      "1": {
+                        "text": "watch",
+                        "color": "yellow",
+                        "index": 2
+                      },
+                      "2": {
+                        "text": "alert",
+                        "color": "orange",
+                        "index": 3
+                      },
+                      "3": {
+                        "text": "fault",
+                        "color": "red",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "minHealth"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Min health index"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 1
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.5
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.75
+                    },
+                    {
+                      "color": "green",
+                      "value": 0.9
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "maxAnomaly"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Max anomaly score"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "minRul"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Min thermal RUL"
+              },
+              {
+                "id": "unit",
+                "value": "h"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "range",
+                    "options": {
+                      "from": -1,
+                      "to": -0.5,
+                      "result": {
+                        "text": "n/a (no temperature)",
+                        "index": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Ten least healthy joints across the fleet",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-phm"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-phm"
+          },
+          "query": "from(bucket: \"phm_agg\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"phm\")\n  |> last()\n  |> pivot(rowKey: [\"thing_id\", \"feature_id\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group(columns: [\"thing_id\"])\n  |> filter(fn: (r) => r.conditionLevel >= 0)\n  |> group()\n  |> sort(columns: [\"healthIndex\"])\n  |> limit(n: 10)\n  |> keep(columns: [\"thing_id\", \"feature_id\", \"condition\", \"healthIndex\", \"anomalyScore\", \"rulHours\", \"temperature\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "thing_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Robot"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "feature_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Joint"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "condition"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "normal": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "watch": {
+                        "color": "yellow",
+                        "index": 1
+                      },
+                      "alert": {
+                        "color": "orange",
+                        "index": 2
+                      },
+                      "fault": {
+                        "color": "red",
+                        "index": 3
+                      },
+                      "stale": {
+                        "color": "text",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "healthIndex"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "anomalyScore"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rulHours"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "h"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "-1": {
+                        "text": "n/a",
+                        "index": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temperature"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Event frames (all robots)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-phm"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-phm"
+          },
+          "query": "from(bucket: \"phm_agg\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"event_frame\" and r.thing_id =~ /^${thing_id:regex}$/)\n  |> pivot(rowKey: [\"_time\", \"thing_id\", \"feature_id\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> group()\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 50)\n  |> keep(columns: [\"_time\", \"thing_id\", \"feature_id\", \"phase\", \"condition\", \"reason\", \"durationS\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "thing_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Robot"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "feature_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Joint"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "condition"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "normal": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "watch": {
+                        "color": "yellow",
+                        "index": 1
+                      },
+                      "alert": {
+                        "color": "orange",
+                        "index": 2
+                      },
+                      "fault": {
+                        "color": "red",
+                        "index": 3
+                      },
+                      "stale": {
+                        "color": "text",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "durationS"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Min health index per robot",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-phm"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-phm"
+          },
+          "query": "from(bucket: \"phm_agg\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"phm\" and r._field == \"healthIndex\" and r.thing_id =~ /^${thing_id:regex}$/)\n  |> group(columns: [\"thing_id\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: min, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, robot: r.thing_id}))\n  |> group(columns: [\"robot\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Max anomaly score per robot (1 = threshold)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-phm"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-phm"
+          },
+          "query": "from(bucket: \"phm_agg\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"phm\" and r._field == \"anomalyScore\" and r.thing_id =~ /^${thing_id:regex}$/)\n  |> group(columns: [\"thing_id\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, robot: r.thing_id}))\n  |> group(columns: [\"robot\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Max drift from baseline per robot (sigmas; alert at 10)",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-phm"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb-phm"
+          },
+          "query": "from(bucket: \"phm_agg\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"phm\" and r._field == \"driftSigma\" and r.thing_id =~ /^${thing_id:regex}$/)\n  |> group(columns: [\"thing_id\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, robot: r.thing_id}))\n  |> group(columns: [\"robot\"])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

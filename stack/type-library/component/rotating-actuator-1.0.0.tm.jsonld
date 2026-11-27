@@ -1,0 +1,49 @@
+{
+  "@context": [
+    "https://www.w3.org/2022/wot/td/v1.1",
+    { "ditto": "https://ditto.eclipseprojects.io/wot/ditto-extension#" }
+  ],
+  "@type": "tm:ThingModel",
+  "title": "Rotating Actuator",
+  "description": "Motor + transmission + encoder. Robot joints (G1, Panda, PiPER X). Vendor differences are expressed only through tm:optional.",
+  "version": { "model": "1.0.0" },
+  "links": [
+    {
+      "rel": "tm:extends",
+      "href": "http://phm-models/models/base/monitored-component-1.0.0.tm.jsonld",
+      "type": "application/tm+json"
+    }
+  ],
+  "tm:optional": [
+    "/properties/lastAssessedAt",
+    "/properties/modelRef",
+    "/events/conditionChanged",
+    "/properties/position",
+    "/properties/torque",
+    "/properties/externalTorque",
+    "/properties/motorPosition",
+    "/properties/current",
+    "/properties/busVoltage",
+    "/properties/windingTemperature",
+    "/properties/driverTemperature",
+    "/properties/faultCode",
+    "/properties/gearRatio",
+    "/properties/ratedTorque",
+    "/properties/maxTemperature"
+  ],
+  "properties": {
+    "position":           { "title": "Output position",            "type": "number", "unit": "rad",   "ditto:category": "status" },
+    "velocity":           { "title": "Output velocity",            "type": "number", "unit": "rad/s", "ditto:category": "status" },
+    "torque":             { "title": "Output torque (measured or estimated)", "type": "number", "unit": "N.m", "ditto:category": "status" },
+    "externalTorque":     { "title": "External torque estimate (model residual)", "type": "number", "unit": "N.m", "ditto:category": "status" },
+    "motorPosition":      { "title": "Motor-side position",        "type": "number", "unit": "rad",   "ditto:category": "status" },
+    "current":            { "title": "Motor current",              "type": "number", "unit": "A",     "ditto:category": "status" },
+    "busVoltage":         { "title": "Drive bus voltage",          "type": "number", "unit": "V",     "ditto:category": "status" },
+    "windingTemperature": { "title": "Winding temperature",        "type": "number", "unit": "Cel",   "ditto:category": "status" },
+    "driverTemperature":  { "title": "Drive electronics temperature", "type": "number", "unit": "Cel", "ditto:category": "status" },
+    "faultCode":          { "title": "Vendor fault/status word",   "type": "integer", "minimum": 0,   "ditto:category": "status" },
+    "gearRatio":          { "title": "Gear ratio",                 "type": "number",                  "ditto:category": "configuration" },
+    "ratedTorque":        { "title": "Rated torque",               "type": "number", "unit": "N.m",   "ditto:category": "configuration" },
+    "maxTemperature":     { "title": "Maximum allowed winding temperature", "type": "number", "unit": "Cel", "ditto:category": "configuration" }
+  }
+}

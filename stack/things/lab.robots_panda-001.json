@@ -1,0 +1,10 @@
+{
+  "policyId": "lab.robots:panda-001",
+  "definition": "http://phm-models/models/asset/arm-franka-panda-1.0.0.tm.jsonld",
+  "attributes": {
+    "vendor": "Franka Robotics",
+    "model": "Panda",
+    "kinematicModelUri": "https://github.com/google-deepmind/mujoco_menagerie/tree/main/franka_emika_panda",
+    "isa95Path": "lab/cell-1/panda-001"
+  }
+}

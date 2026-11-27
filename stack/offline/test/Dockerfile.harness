@@ -1,0 +1,7 @@
+# Test harness for offline-proof.sh only (not shipped in the bundle): Docker-in-Docker plus the tools the
+# stack scripts expect on a target host (bash, curl, python3, jq, openssl, envsubst, coreutils) and the same
+# standalone docker-compose binary as the DGX (copied in by offline-proof.sh).
+ARG DIND=docker.io/library/docker:27.5.1-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
+FROM ${DIND}
+RUN apk add --no-cache bash curl python3 jq openssl gettext coreutils
+COPY docker-compose /usr/local/bin/docker-compose

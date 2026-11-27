@@ -1,0 +1,14 @@
+[Unit]
+Description=AgileX PiPER X MuJoCo simulation to MQTT adapter (sim backend, demo data, joint2 wear injected, 24 h wear cycle)
+After=network-online.target
+
+[Service]
+# OPENTWINS_STACK, MENAGERIE_DIR and MQTT_EDGE_PASSWORD (file mode 600)
+EnvironmentFile=%h/.config/phm-sim/env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 ${OPENTWINS_STACK}/adapters/piperx_can_mqtt.py --backend sim --sim-wear-cycle-h 24 --sim-wear joint2=0.5
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

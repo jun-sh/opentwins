@@ -1,0 +1,60 @@
+{
+  "uid": "phm-component-trends",
+  "title": "Component Trends",
+  "tags": ["phm"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "thing_id",
+        "label": "Asset",
+        "type": "query",
+        "datasource": { "type": "influxdb", "uid": "influxdb-phm" },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"raw\", tag: \"thing_id\", start: -30d)",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "feature_id",
+        "label": "Component",
+        "type": "query",
+        "datasource": { "type": "influxdb", "uid": "influxdb-phm" },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"raw\", tag: \"feature_id\", predicate: (r) => r.thing_id == \"${thing_id}\", start: -30d)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true
+      },
+      {
+        "name": "property",
+        "label": "Property",
+        "type": "query",
+        "datasource": { "type": "influxdb", "uid": "influxdb-phm" },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.measurementFieldKeys(bucket: \"raw\", measurement: \"telemetry\", start: -30d)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "${property} - ${thing_id}",
+      "repeat": "property",
+      "repeatDirection": "v",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 9 },
+      "datasource": { "type": "influxdb", "uid": "influxdb-phm" },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"raw\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"telemetry\" and r.thing_id == \"${thing_id}\" and r._field == \"${property}\")\n  |> filter(fn: (r) => r.feature_id =~ /^${feature_id:regex}$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, feature: r.feature_id}))\n  |> group(columns: [\"feature\"])"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+[Unit]
+Description=Franka Panda MuJoCo simulation to MQTT adapter (sim backend, demo data)
+After=network-online.target
+
+[Service]
+# OPENTWINS_STACK, MENAGERIE_DIR and MQTT_EDGE_PASSWORD (file mode 600)
+EnvironmentFile=%h/.config/phm-sim/env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 ${OPENTWINS_STACK}/adapters/panda_franka_mqtt.py --backend sim --sim-wear-cycle-h 24
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,90 @@
+{
+  "@context": [
+    "https://www.w3.org/2022/wot/td/v1.1",
+    {
+      "ditto": "https://ditto.eclipseprojects.io/wot/ditto-extension#"
+    }
+  ],
+  "@type": "tm:ThingModel",
+  "title": "Battery Pack",
+  "description": "Rechargeable battery pack with BMS (e.g. Unitree G1 13S pack).",
+  "version": {
+    "model": "1.0.0"
+  },
+  "links": [
+    {
+      "rel": "tm:extends",
+      "href": "http://phm-models/models/base/monitored-component-1.0.0.tm.jsonld",
+      "type": "application/tm+json"
+    }
+  ],
+  "tm:optional": [
+    "/properties/lastAssessedAt",
+    "/properties/modelRef",
+    "/events/conditionChanged",
+    "/properties/soh",
+    "/properties/cycleCount",
+    "/properties/current",
+    "/properties/cellVoltages",
+    "/properties/temperatures",
+    "/properties/ratedCapacityAh"
+  ],
+  "properties": {
+    "soc": {
+      "title": "State of charge",
+      "type": "number",
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 100,
+      "ditto:category": "status"
+    },
+    "voltage": {
+      "title": "Pack voltage",
+      "type": "number",
+      "unit": "V",
+      "ditto:category": "status"
+    },
+    "current": {
+      "title": "Pack current (sign per vendor BMS; G1 reads negative while powered on)",
+      "type": "number",
+      "unit": "A",
+      "ditto:category": "status"
+    },
+    "soh": {
+      "title": "State of health (vendor BMS)",
+      "type": "number",
+      "unit": "%",
+      "ditto:category": "status"
+    },
+    "cycleCount": {
+      "title": "Charge cycle count",
+      "type": "integer",
+      "minimum": 0,
+      "ditto:category": "status"
+    },
+    "cellVoltages": {
+      "title": "Per-cell voltages",
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "unit": "V",
+      "ditto:category": "status"
+    },
+    "temperatures": {
+      "title": "Pack temperature sensors",
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "unit": "Cel",
+      "ditto:category": "status"
+    },
+    "ratedCapacityAh": {
+      "title": "Rated capacity",
+      "type": "number",
+      "unit": "A.h",
+      "ditto:category": "configuration"
+    }
+  }
+}
