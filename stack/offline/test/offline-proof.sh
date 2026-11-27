@@ -39,7 +39,8 @@ x bash -c 'set -e; cd /work/opentwins/stack; set -a; . ./.env; set +a
   echo "Ditto:    $(curl -fs http://127.0.0.1:$PHM_HTTP_PORT/health | jq -c "{status}")"
   echo "Ditto UI: HTTP $(curl -s -o /dev/null -w %{http_code} http://127.0.0.1:$PHM_HTTP_PORT/ui/) image $(docker inspect --format {{.Config.Image}} $(docker ps -qf name=ditto-ui))"
   docker ps -q | xargs docker inspect -f "{{.Name}}\t{{.Config.Image}}\t{{.State.Status}} restarts={{.RestartCount}} health={{if .State.Health}}{{.State.Health.Status}}{{end}}" | sort
-  sleep 75  # downsample task runs every minute
+  for _ in $(seq 36); do docker logs phm-analytics-phm-worker-1 2>&1 | grep -q "^\[cycle\]" && break; sleep 5; done  # first cycle may predate provision
+  docker logs phm-analytics-phm-worker-1 2>&1 | grep -q "^\[cycle\]" || { echo "phm-worker: no successful cycle in 180 s" >&2; exit 1; }
   echo "Tasks:    $(curl -fs -H "$A" "$I/tasks?org=phm" | jq -c "[.tasks[]|{name,status,lastRunStatus}]")"
   echo "phm-worker log tail:"; docker logs --tail 5 phm-analytics-phm-worker-1 2>&1'
 log "PASS: offline install healthy in isolation"
