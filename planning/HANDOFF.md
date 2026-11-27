@@ -1,4 +1,4 @@
-# 交接文档（更新于 2026-11-24：总目标改为只做机器人，核电/泵组部分已全部移除）
+# 交接文档（更新于 2026-11-27：PR #1 已合并进 fork 的 `main`；2026-11-24 起只做机器人，核电/泵组已移除）
 
 新对话从这里开始：先读本文件，按需再读 `p0-verification.md`、`type-design.md`、`p3-phm.md`、`../stack/README.md`。
 
@@ -35,11 +35,11 @@
 
 ## 4. 当前环境
 
-- 分支 `feat/phm-p1-stack` 已推送到 fork（远程 `fork` = jun-sh/opentwins），PR：https://github.com/jun-sh/opentwins/pull/1（fork 内，base main，未合并）。`origin` 是上游 ertis-research/opentwins，不要推送到那里。服务栈运行在本机 DGX 上（核心 compose 项目 `phm`；另有独立项目 `phm-analytics`（P3 worker，`stack/phm/`），只加入 `phm_default` 网络）。
+- 代码在 fork（远程 `fork` = jun-sh/opentwins）。P1–P5 全部工作经 PR https://github.com/jun-sh/opentwins/pull/1 于 2026-11-27 以 merge commit 合并进 `fork/main`；**新工作从 `fork/main` 开新分支**，`feat/phm-p1-stack` 不再使用。`origin` 是上游 ertis-research/opentwins，不要推送到那里。服务栈运行在本机 DGX 上（核心 compose 项目 `phm`；另有独立项目 `phm-analytics`（P3 worker，`stack/phm/`），只加入 `phm_default` 网络）。
 - 登录：Grafana http://127.0.0.1:13000，Ditto UI http://127.0.0.1:18080/ui/。两者都用 `admin`，密码在 `stack/.env`（git 忽略）。
 - MQTT 供边缘接入：`<DGX>:11883`，用户 `edge`。主题约定见 `stack/README.md`。
 - **G1 跳板机**：`ssh server@10.10.61.210`（本机已配好 SSH 密钥，不用密码）。网卡 `enp6s0`（192.168.123.99）直连 G1 内网，G1 的 PC2 是 192.168.123.164。可用的 SDK 解释器：`/home/server/workspace/gr00t_wbc/.venv/bin/python`（含 `unitree_sdk2py`）。**gr00t_wbc 属于他人正在进行的工作，禁止修改其中任何文件**：脚本放在 `/tmp` 或自己的目录，运行时设置 `PYTHONDONTWRITEBYTECODE=1`。
-- 孪生：`lab.robots:g1-001`（真机实时数据 + PHM 评估）、`lab.robots:panda-001` 和 `lab.robots:piperx-001`（只有 fake 后端测试数据）。模拟器在会话临时目录中，**不在仓库里**，可能已被清理。
+- 孪生：`lab.robots:g1-001`（真机实时数据 + PHM 评估）、`lab.robots:panda-001` 和 `lab.robots:piperx-001`（MuJoCo 仿真数据，DGX 用户服务常驻，见 §5 仿真；尚未接真机）。
 
 ## 5. 下一步
 
@@ -55,7 +55,7 @@ G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab
 - PiPER 单元对 `joint2` 注入磨损 0.5/小时（阻尼 N·m·s/rad 与摩擦 N·m），重启适配器即复位；预计数小时后 `joint2` 扭矩/温度上升、ECOD 打分升高。
 - 坑：`stack/.env` 含 `COMPOSE_PROJECT_NAME=phm`，在 `stack/phm` 里用 `--env-file ../.env` 会把 worker 建进 `phm` 项目；必须 `docker-compose -p phm-analytics --env-file ../.env up -d --build`。
 
-### P5 离线部署与 SBOM 状态（2026-11-23，分支 `claude/phm-p5-offline-sbom-f4b530`）
+### P5 离线部署与 SBOM 状态（2026-11-23，已合并）
 - 全部在 `stack/offline/`，用法见 `stack/README.md` 的 P5 小节。**核心文件改动 0 个**：compose 文件、Dockerfile、`scripts/`、各类配置均未修改；只新增 `offline/` 下文件，外加 `stack/README.md`（登记表 + P5 小节）和本文件（文档）。
 - `bundle.sh lock`：`images.lock` 把 compose 文件和 Dockerfile 中的 上游镜像引用固定到注册表摘要（取自本机正在运行的镜像）；`python/phm-worker.lock.txt`（29 个制品）记录每个 PyPI 制品的 sha256（x86_64、cp311）。
 - `bundle.sh build`：按哈希下载 wheel（`fastdtw` 只有 sdist，打包时在固定的 Python 基础镜像中构建成 wheel，sdist 一并放入包中供审计），用 `docker build --network none` 构建自定义镜像（标签带 `-offline`，不覆盖运行中的 `phm-worker:0.1` 等），`docker save` 全部镜像，生成 SBOM 和许可证汇总，输出 `dist/opentwins-phm-offline-<日期>-<提交>-<arch>.tar`（2026-11-25 重建：`opentwins-phm-offline-20261125-48b55dd-x86_64.tar`，1.9 GB，15 个镜像，Grafana 12.4.15 + 修补版 ditto-ui，无泵组；`offline-proof.sh --rebuild` 断网隔离安装通过）+ `.tar.sha256`，包内有 `SHA256SUMS`。本机上的 tar 不进 git（`dist/` 已忽略）。
@@ -63,7 +63,7 @@ G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab
 - **验证**（`offline/test/offline-proof.sh`）：在 `--network none` 的一次性 Docker-in-Docker 中（镜像库为空，网卡只有 lo/docker0，访问 Docker Hub 和 PyPI 失败）安装本次的包并加 `--rebuild`：16 个镜像 ID 全部一致；InfluxDB `pass` v2.10.1、Grafana `ok` 12.4.9、Ditto `UP`；provision 全部 201；smoke test 两项 PASS；15 个容器 restarts=0、5 个 Ditto 服务 healthy；PHM worker 第一轮因 Ditto 尚未启动返回 502，下一轮（120 s 后）正常（29 个关节因无 G1 数据标为 stale，符合预期）。全程约 3 分钟；结束后只删除了自己的容器和卷，运行中的服务栈未受影响（启动时间未变）。
 - SBOM：Syft v1.56.0（CycloneDX JSON），漏洞：Grype v0.121.1（数据库 2026-11-23），两者都按摘要固定。仓库内副本在 `stack/offline/sbom/`：`cyclonedx.tar.gz`（每个镜像一份 + 自定义镜像的 Python 专用 SBOM）、`licence-summary.md`、`licence-flags.csv`、`vuln-summary.md`。
 - **许可证（需法务，未做决定）**：已知 Grafana AGPL-3.0、ProgPy NOSA（NASA-1.3）、Atlas CMMS AGPL（未部署）。**新发现**：MongoDB 7.0 为 SSPL-1.0（非 OSI，Ditto 的存储）；mongo 镜像内的 `mongodb-mongosh` 声明 `Apache-2.0 ; Proprietary`；Python 依赖 `certifi` 为 MPL-2.0、`autocommand` 为 LGPL-3.0。Go/Java 组件大量显示 unknown（扫描器读不到二进制里的许可证），产品级许可证见手工维护的 `offline/components.json`。
-- 漏洞（匹配数）：Grafana 33 Critical/154 High、ditto-ui 16/63、InfluxDB 4/61、Python 基础镜像（含 worker）4/99、mongo 3/43；Ditto 后端服务 0 Critical、6–8 High。均为上游镜像自带，未升级任何版本（升级需人决定）。
+- 漏洞（匹配数，2026-11-23 首次扫描；Grafana、ditto-ui 之后已处理，见 §6 CVE 升级）：Grafana 33 Critical/154 High、ditto-ui 16/63、InfluxDB 4/61、Python 基础镜像（含 worker）4/99、mongo 3/43；Ditto 后端服务 0 Critical、6–8 High。均为上游镜像自带，未升级任何版本（升级需人决定）。
 - 遗留：一个包只支持一种 CPU 架构（arm64 需重新 lock）；sdist 构建后端在打包时从 PyPI 取、未固定；审计（访问日志、变更记录）未做；离线 Dockerfile 需与在线版手工保持一致。
 
 ### P2 Panda 适配器状态（2026-11-23）
@@ -79,10 +79,10 @@ G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab
 - 离线验证（fake，DGX）：200 Hz 新帧；Ditto 6 关节 + controller 实时更新；InfluxDB 25 s 内每关节 4930 条（≈ 200 Hz × 运行时长）。
 - 真机步骤：① 工控机上 `pip install piper_sdk`，配置 SocketCAN（`can0`，1 Mbit/s）；② `--dry-run --duration 10` 读固件版本（≥ 1.8-8 用 V3）并确认机型是 PiPER X；③ 正式运行 60 s，记录 `[stats]` 的帧率；④ 做 systemd 单元。需用户提供：PiperX 连在哪台机器、CAN 口名。
 
-### P3 PHM 状态（2026-11-23，分支 `claude/phm-p3-pipeline-4cb468`）
+### P3 PHM 状态（2026-11-23，已合并）
 - 设计、参数、局限、Atlas 评估：`planning/p3-phm.md`。核心代码（TM、Ditto/Telegraf/mosquitto 配置、主 compose）改动 0 行；worker 是独立 compose 项目 `phm-analytics`（`stack/phm/`），只加入 `phm_default` 网络。
 - 运行：`cd stack/phm && docker-compose -p phm-analytics --env-file ../.env up -d --build`（`-p` 必须带）。`restart: unless-stopped` + `init: true`；进程被 kill -9 后自动拉起已验证；未结束的 Event Frame 重启后从 InfluxDB 恢复（已用临时 thing_id 验证后删除）。
-- Grafana 面板 `PHM Health per Robot`（原 `G1 PHM Health`，uid `phm-g1-health` 未改，按 thing_id 切换机器人）已通过 API 导入运行中的 Grafana；文件在 `stack/grafana/dashboards/g1-phm-health.json`，分支合并后由文件 provisioning 接管。
+- Grafana 面板 `PHM Health per Robot`（原 `G1 PHM Health`，uid `phm-g1-health` 未改，按 thing_id 切换机器人）已通过 API 导入运行中的 Grafana；文件在 `stack/grafana/dashboards/g1-phm-health.json`，由文件 provisioning 管理。
 - 待人工：① 宇树 G1 关节过温限值 → 写入各关节 `configuration.maxTemperature`；② 是否部署 Atlas CMMS（AGPL）；③ 阈值（watch/alert）需要带载数据后再调。
 - G1 曾离线：`rt/lowstate` 10:36–11:20 UTC（18:36–19:20 CST）为 0 Hz（电池数据正常）；11:45 UTC 复查时已恢复（10 min 约 45 万样本/关节，Telegraf 修复后）。worker 对 10 min 无数据的关节不评估（`rulHours=-1`，InfluxDB 标 `stale`），历史回放模式见 `p3-phm.md`。**若机器人再次离线，实时链路需在其恢复后复查**；最后一次实时复查：2026-11-23 11:43 UTC，29 个关节均有新评估。
 
@@ -109,7 +109,7 @@ G1 29 自由度已打通（见 git log `feat/phm-p1-stack`）：TM、孪生 `lab
 - **G1 关节数据已停 24 h 以上**（2026-11-26 15:20 UTC 查：只有 `battery` 有数据，29 个关节全部 stale）：即 `rt/lowstate` 停发问题，需到现场确认机器人状态。
 - 未验证：MQTT ACL（smoke test 没覆盖）、Grafana 面板的视觉效果（查询已用 API 验证）、Telegraf 内存缓冲在 InfluxDB 长时间停机下的行为。
 - 许可证：Grafana 和 Atlas CMMS 为 AGPL，ProgPy 为 NOSA，对外交付前需要法务意见（另见 P5 小节：MongoDB SSPL）。
-- **CVE 升级（2026-11-24，分支 `claude/phm-cve-upgrade-89a9e7`）**：Grafana 12.4.9 → **12.4.15**（同主版本；Grype Critical/High 33/154 → 1/25；13.3.1 为 5/55，未选）。先在隔离项目（独立端口、卷为在线卷的副本）验证，再在线只重建 grafana（`up -d --no-deps`，其他容器启动时间未变）：登录正常，4 个面板 37 个查询全部有数据、0 错误，结果与 12.4.9 逐项一致。旧卷冷备份：`~/opentwins-backups/phm_grafana-data-12.4.9-20261124T013354Z.tar.gz`（12.4.15 已迁移数据库，回退需恢复此备份）。**ditto-ui 修补（2026-11-25，用户改为升级）**：上游 3.9.9 仍是最新、镜像摘要未变，故用 `stack/ditto-ui/Dockerfile`（`FROM ditto-ui:3.9.9` + `apk upgrade`，以 root 升级后切回用户 101）构建 `phm-ditto-ui:3.9.9-apk`；Grype Critical/High 16/63 → **0/10**（剩余 10 个 High 是 openssl 3.5.9-r1，Alpine 尚无修复）；UI 静态文件与原版逐字节一致，隔离容器内页面 200。compose 已改为该镜像；2026-11-25 用户确认后在线只重建 ditto-ui（`up -d --no-deps ditto-ui`），经 nginx 访问 `/ui/` 和 `dist/main.js` 均 200、`/api/2` 正常，无需重启 nginx。回退：compose 中 ditto-ui 改回 `eclipse/ditto-ui:3.9.9` 后同样只重建该容器。离线包：`bundle.sh` 联网从锁定的基础镜像摘要构建 `phm-ditto-ui:3.9.9-apk-offline` 并打入包（`install.sh --rebuild` 不重建它，需 Alpine 源）；2026-11-25 重建 `opentwins-phm-offline-20261125-48b55dd-x86_64.tar`（1.9 GB，15 个镜像），`offline-proof.sh --rebuild` 断网隔离安装通过（新增 UI 检查：HTTP 200，镜像为修补版）。
+- **CVE 升级（2026-11-24，已合并）**：Grafana 12.4.9 → **12.4.15**（同主版本；Grype Critical/High 33/154 → 1/25；13.3.1 为 5/55，未选）。先在隔离项目（独立端口、卷为在线卷的副本）验证，再在线只重建 grafana（`up -d --no-deps`，其他容器启动时间未变）：登录正常，4 个面板 37 个查询全部有数据、0 错误，结果与 12.4.9 逐项一致。旧卷冷备份：`~/opentwins-backups/phm_grafana-data-12.4.9-20261124T013354Z.tar.gz`（12.4.15 已迁移数据库，回退需恢复此备份）。**ditto-ui 修补（2026-11-25，用户改为升级）**：上游 3.9.9 仍是最新、镜像摘要未变，故用 `stack/ditto-ui/Dockerfile`（`FROM ditto-ui:3.9.9` + `apk upgrade`，以 root 升级后切回用户 101）构建 `phm-ditto-ui:3.9.9-apk`；Grype Critical/High 16/63 → **0/10**（剩余 10 个 High 是 openssl 3.5.9-r1，Alpine 尚无修复）；UI 静态文件与原版逐字节一致，隔离容器内页面 200。compose 已改为该镜像；2026-11-25 用户确认后在线只重建 ditto-ui（`up -d --no-deps ditto-ui`），经 nginx 访问 `/ui/` 和 `dist/main.js` 均 200、`/api/2` 正常，无需重启 nginx。回退：compose 中 ditto-ui 改回 `eclipse/ditto-ui:3.9.9` 后同样只重建该容器。离线包：`bundle.sh` 联网从锁定的基础镜像摘要构建 `phm-ditto-ui:3.9.9-apk-offline` 并打入包（`install.sh --rebuild` 不重建它，需 Alpine 源）；2026-11-25 重建 `opentwins-phm-offline-20261125-48b55dd-x86_64.tar`（1.9 GB，15 个镜像），`offline-proof.sh --rebuild` 断网隔离安装通过（新增 UI 检查：HTTP 200，镜像为修补版）。
 
 ## 7. 常用命令（在 `stack/` 下执行）
 
