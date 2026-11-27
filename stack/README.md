@@ -68,7 +68,7 @@ validates every write. Ditto blocks Thing Model downloads from private addresses
 | `offline/install.sh` | 100 | P5: air-gapped install from an extracted bundle (checksums, `docker load`, image-ID check, init-env, 2 projects up with offline overlays, health wait, provision, smoke test; `--rebuild` rebuilds custom images offline) |
 | `offline/sbom.sh` | 48 | P5: Syft CycloneDX SBOM per image (+ Python-only SBOM for custom images), Grype vulnerability JSON + summary |
 | `offline/licence_summary.py` | 133 | P5: licence classes from the SBOMs + curated `components.json`; flags AGPL/SSPL/NOSA/non-OSI/unknown |
-| `offline/test/offline-proof.sh`, `Dockerfile.harness` | 51 | P5 test only: installs a bundle in a throwaway Docker-in-Docker with `--network none` and checks health and smoke test |
+| `offline/test/offline-proof.sh`, `Dockerfile.harness` | 45 | P5 test only: installs a bundle in a throwaway Docker-in-Docker with `--network none` and checks health, smoke test, InfluxDB buckets/retention and downsample task |
 | `offline/docker/*.Dockerfile`, `offline/compose/*.offline.yml` | 62 | P5 config: offline twin of `phm/Dockerfile` (wheels only, `--require-hashes`; keep in sync) and `pull_policy: never` overlays |
 
 ## P5 offline deployment and SBOM (`offline/`)

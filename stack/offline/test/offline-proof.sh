@@ -34,9 +34,12 @@ log "post-install checks"
 x bash -c 'set -e; cd /work/opentwins/stack; set -a; . ./.env; set +a
   echo "InfluxDB: $(curl -fs http://127.0.0.1:$PHM_INFLUX_PORT/health | jq -c "{status,version}")"
   echo "Grafana:  $(curl -fs http://127.0.0.1:$PHM_GRAFANA_PORT/api/health | jq -c "{database,version}")"
+  A="Authorization: Token $INFLUX_TOKEN"; I=http://127.0.0.1:$PHM_INFLUX_PORT/api/v2
+  echo "Buckets:  $(curl -fs -H "$A" "$I/buckets?org=phm" | jq -c "[.buckets[]|select(.type==\"user\")|{name,expireS:.retentionRules[0].everySeconds}]")"
   echo "Ditto:    $(curl -fs http://127.0.0.1:$PHM_HTTP_PORT/health | jq -c "{status}")"
   echo "Ditto UI: HTTP $(curl -s -o /dev/null -w %{http_code} http://127.0.0.1:$PHM_HTTP_PORT/ui/) image $(docker inspect --format {{.Config.Image}} $(docker ps -qf name=ditto-ui))"
   docker ps -q | xargs docker inspect -f "{{.Name}}\t{{.Config.Image}}\t{{.State.Status}} restarts={{.RestartCount}} health={{if .State.Health}}{{.State.Health.Status}}{{end}}" | sort
-  sleep 20
+  sleep 75  # downsample task runs every minute
+  echo "Tasks:    $(curl -fs -H "$A" "$I/tasks?org=phm" | jq -c "[.tasks[]|{name,status,lastRunStatus}]")"
   echo "phm-worker log tail:"; docker logs --tail 5 phm-analytics-phm-worker-1 2>&1'
 log "PASS: offline install healthy in isolation"
